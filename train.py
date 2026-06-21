@@ -5,6 +5,7 @@ from ns3_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
 from utils.replay_buffer import ReplayBuffer
 from utils.tacview_logger import TacviewLogger
+from utils.metrics_logger import MetricsLogger
 
 def main():
     print("========================================================")
@@ -25,6 +26,7 @@ def main():
     
     global_step = 0
     model_dir = "models/weights"
+    metrics_logger = MetricsLogger("logs/training_rewards.csv")
     
     print("\n[알림] 대규모 데이터 수집 및 인공지능 최적화 시작...")
     
@@ -73,6 +75,8 @@ def main():
             if terminated:
                 break
                 
+        metrics_logger.log_episode(episode, episode_reward, num_drones)
+
         # 로그 출력 (10 에피소드마다)
         if episode % 10 == 0 or episode == 1:
             print(f"에피소드 {episode:04d} | 총 전술 보상 합계: {episode_reward:7.2f} | 버퍼 크기: {replay_buffer.size:6d}")

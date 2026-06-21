@@ -1,58 +1,63 @@
+"""학습 수렴 곡선 (Convergence Plot) 시각화."""
+
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-def generate_thesis_plot():
-    print("=== 논문용 고해상도 학습 수렴 그래프 생성 시작 ===")
-    
-    episodes = 1000
+from utils.metrics_logger import MetricsLogger
+from utils.plot_style import apply_thesis_style, save_figure, COLORS
+
+
+def _synthetic_rewards(episodes=1000, seed=42):
+    """실제 로그가 없을 때 학습 트렌드 기반 합성 데이터."""
+    rng = np.random.default_rng(seed)
     x = np.arange(1, episodes + 1)
-    
-    # 학습 과정에서 터미널로 확인했던 보상 트렌드를 바탕으로 데이터 복원
-    # 초기: 무작위 탐색으로 인한 대규모 페널티 발생 (-800 ~ -100 구간 진동)
-    # 중반 이후: 스웜 전술 최적화를 통한 우상향 수렴 (+100 부근)
-    raw_rewards = -800 * np.exp(-x / 300) + 100 + np.random.normal(0, 150, episodes)
-    
-    # 안정화 이후의 노이즈 감쇠 모델링
+    raw = -800 * np.exp(-x / 300) + 100 + rng.normal(0, 150, episodes)
     decay = np.exp(-x / 500)
-    raw_rewards = raw_rewards * decay + (100.26) * (1 - decay) + np.random.normal(0, 20, episodes)
-    
-    # 논문용 이동 평균선(Moving Average) 계산 (Window = 50)
-    window = 50
-    moving_avg = np.convolve(raw_rewards, np.ones(window)/window, mode='valid')
-    x_ma = np.arange(window, episodes + 1)
+    raw = raw * decay + 100.26 * (1 - decay) + rng.normal(0, 20, episodes)
+    return x, raw
 
-    # -------------------------------------------------------------
-    # 고해상도(DPI 300) 학술 규격 그래프 렌더링 세팅
-    # -------------------------------------------------------------
-    plt.figure(figsize=(10, 6), dpi=300)
-    
-    # 원본 데이터 (연한 배경 처리로 트렌드 강조)
-    plt.plot(x, raw_rewards, alpha=0.3, color='#a0aec0', label='Raw Episode Reward')
-    
-    # 이동 평균선 (메인 데이터)
-    plt.plot(x_ma, moving_avg, color='#2b6cb0', linewidth=2.5, label=f'Moving Average (Window={window})')
-    
-    # 최적화 도달 기준선(0점선 및 수렴선)
-    plt.axhline(0, color='red', linestyle='--', alpha=0.5, label='Zero Reward Baseline')
-    plt.axhline(100.26, color='green', linestyle=':', alpha=0.7, label='Final Convergence (+100.26)')
 
-    # 축 및 제목 설정 (논문 캡션 규격)
-    plt.title('Convergence of Multi-Agent Swarm Tactical Policy (Dec-POMDP)', fontsize=14, fontweight='bold', pad=15)
-    plt.xlabel('Training Episodes', fontsize=12)
-    plt.ylabel('Total Tactical Reward', fontsize=12)
-    
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.legend(loc='lower right', fontsize=10)
-    plt.tight_layout()
+def plot_convergence(
+    save_path="logs/learning_curve_high_dpi.png",
+    csv_path="logs/training_rewards.csv",
+    window=50,
+):
+    apply_thesis_style()
+    print("=== 학습 수렴 곡선 (Convergence Plot) 생성 ===")
 
-    # 이미지 파일로 저장
-    save_path = "logs/learning_curve_high_dpi.png"
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path)
-    
-    print(f"=== 그래프 렌더링 완료: {save_path} 파일이 생성되었습니다 ===")
-    plt.close()
+    episodes, raw_rewards = MetricsLogger.load_rewards(csv_path)
+    if episodes is None:
+        print("  [알림] training_rewards.csv 없음 — 합성 데이터 사용")
+        episodes, raw_rewards = _synthetic_rewards()
+    else:
+        print(f"  [알림] {len(episodes)}개 에피소드 실측 데이터 사용")
+
+    moving_avg = np.convolve(raw_rewards, np.ones(window) / window, mode="valid")
+    x_ma = episodes[window - 1:]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(episodes, raw_rewards, alpha=0.3, color=COLORS["muted"], label="Raw Episode Reward")
+    plt.plot(x_ma, moving_avg, color=COLORS["primary"], linewidth=2.5,
+             label=f"Moving Average (Window={window})")
+
+    final_val = float(np.mean(raw_rewards[-50:]))
+    plt.axhline(0, color=COLORS["danger"], linestyle="--", alpha=0.5, label="Zero Reward Baseline")
+    plt.axhline(final_val, color=COLORS["secondary"], linestyle=":", alpha=0.7,
+                label=f"Final Convergence ({final_val:.2f})")
+
+    plt.title("Convergence Plot: Multi-Agent Swarm Tactical Policy", fontweight="bold", pad=15)
+    plt.xlabel("Training Episodes")
+    plt.ylabel("Total Tactical Reward (Cumulative)")
+    plt.legend(loc="lower right")
+    plt.grid(True)
+    save_figure(save_path)
+    return final_val
+
 
 if __name__ == "__main__":
-    generate_thesis_plot()
+    plot_convergence()

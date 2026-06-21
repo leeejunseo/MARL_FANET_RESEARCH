@@ -18,6 +18,7 @@
   - 학습·평가 결과를 3D 전술 뷰어에서 재생 가능
   - 통신 단절 시 드론 색상 Yellow 경고 표시
 - **학습 수렴 그래프** 자동 생성 (논문용 300 DPI)
+- **논문용 시각화 모듈** — ROC/AUC, 프로토콜 비교, XAI 히트맵/SHAP
 
 ---
 
@@ -34,7 +35,17 @@ marl_fanet_research/
 ├── utils/
 │   ├── replay_buffer.py        # 다중 에이전트 경험 재생 버퍼
 │   ├── tacview_logger.py       # Tacview ACMI 파일 로거
-│   └── plot_learning_curve.py  # 학습 수렴 그래프 생성
+│   ├── metrics_logger.py       # 학습 보상 CSV 로깅
+│   ├── plot_style.py           # 논문용 matplotlib 공통 스타일
+│   ├── plot_learning_curve.py  # 학습 수렴 곡선
+│   ├── plot_roc_auc.py         # ROC Curve & AUC
+│   ├── plot_bar_comparison.py  # 프로토콜 성능 바 차트
+│   ├── plot_xai_heatmap.py     # XAI 히트맵 / SHAP Summary
+│   └── generate_all_plots.py   # 전체 시각화 일괄 생성
+├── analysis/
+│   ├── malicious_detector.py   # 악의적 노드 탐지 (ROC/AUC 평가)
+│   └── xai_explainer.py        # XAI 특성 기여도 분석
+├── requirements.txt
 ├── models/weights/             # 학습된 신경망 가중치 (.pth)
 └── logs/                       # Tacview ACMI 로그 및 학습 그래프
 ```
@@ -57,7 +68,7 @@ marl_fanet_research/
 git clone https://github.com/leeejunseo/MARL_FANET_RESEARCH.git
 cd MARL_FANET_RESEARCH
 
-pip install torch numpy gymnasium matplotlib
+pip install -r requirements.txt
 ```
 
 ---
@@ -91,13 +102,28 @@ python test.py
 
 1000 에피소드 모델을 로드하여 탐색 노이즈 없이 전술 기동을 평가하고, `logs/swarm_test_eval.acmi` 파일을 생성합니다.
 
-### 3. 학습 수렴 그래프 생성
+### 3. 논문용 시각화 일괄 생성
 
 ```bash
-python utils/plot_learning_curve.py
+python utils/generate_all_plots.py
 ```
 
-`logs/learning_curve_high_dpi.png` (300 DPI) 파일이 생성됩니다.
+| 스크립트 | 출력 파일 | 설명 |
+|---|---|---|
+| `plot_learning_curve.py` | `logs/learning_curve_high_dpi.png` | 학습 수렴 곡선 (Convergence Plot) |
+| `plot_roc_auc.py` | `logs/roc_curve_auc.png` | 악의적 노드 탐지 ROC & AUC |
+| `plot_bar_comparison.py` | `logs/protocol_comparison_bar.png` | AODV / MARL / EMARL-XAI 성능 비교 |
+| `plot_xai_heatmap.py` | `logs/xai_*.png` | XAI 히트맵, SHAP Summary, 특성 중요도 |
+
+개별 실행도 가능합니다:
+
+```bash
+python utils/plot_roc_auc.py
+python utils/plot_bar_comparison.py
+python utils/plot_xai_heatmap.py
+```
+
+> `train.py` 실행 시 `logs/training_rewards.csv`에 에피소드별 보상이 기록되며, 수렴 곡선은 실측 데이터를 우선 사용합니다.
 
 ### 4. Tacview에서 결과 확인
 
@@ -163,11 +189,41 @@ $$R_i = 1.0 \cdot r_{cov} + 2.5 \cdot r_{col} + 3.0 \cdot r_{conn}$$
 
 ---
 
+## 논문용 시각화
+
+### ROC Curve & AUC — 악의적 노드 탐지
+
+SNR, Trust Score, Hop Count, Packet Drop Rate, Latency 기반으로 정상/악의적 노드를 분류합니다. TPR-FPR 곡선과 AUC 값으로 EMARL-XAI의 탐지 우위를 증명합니다.
+
+![ROC Curve](logs/roc_curve_auc.png)
+
+### Convergence Plot — 학습 수렴
+
+에피소드 진행에 따른 누적 보상 변화와 이동 평균선으로 학습 안정성을 확인합니다.
+
+![학습 수렴 그래프](logs/learning_curve_high_dpi.png)
+
+### Bar Chart — 프로토콜 성능 비교
+
+정상 환경 vs 악의적 공격 환경에서 AODV, Standard MARL, EMARL-XAI의 PDR·Delay·Detection Accuracy를 비교합니다.
+
+![프로토콜 비교](logs/protocol_comparison_bar.png)
+
+### XAI — 특성 기여도 분석
+
+Integrated Gradients 기반 SHAP Summary Plot과 상관 히트맵으로 라우팅 의사결정에 영향을 미치는 변수(SNR, Trust Score, Hop Count 등)를 시각화합니다.
+
+| 그래프 | 파일 |
+|---|---|
+| 특성 상관 히트맵 | `logs/xai_feature_heatmap.png` |
+| SHAP Summary Plot | `logs/xai_shap_summary.png` |
+| 특성 중요도 바 차트 | `logs/xai_feature_importance.png` |
+
+---
+
 ## 학습 결과
 
 1000 에피소드 학습 후 총 전술 보상은 약 **+100.26** 수준으로 수렴합니다.
-
-![학습 수렴 그래프](logs/learning_curve_high_dpi.png)
 
 ---
 

@@ -126,6 +126,19 @@ python test.py
 
 1000 에피소드 모델을 로드하여 탐색 노이즈 없이 전술 기동을 평가하고, `logs/swarm_test_eval.acmi` 파일을 생성합니다.
 
+```bash
+python eval.py
+```
+
+정량적 평가를 위해 N 에피소드에 대해 평균 보상, PDR, 지연, 평균 hop, 트러스트, 탐지율, 통신 단절 비율을 `logs/eval_metrics.csv`에 저장하고, `logs/eval_node_features.npz`에는 ROC/AUC용 노드 특성 데이터를 저장합니다.
+
+### 2.1 구성 파일
+
+모든 환경 및 학습/평가 설정은 `config.yaml`에서 관리합니다.
+- `environment`: 드론 수, 통신 반경 `R_c`, 악의적 노드 비율 등
+- `training`: 에피소드 수, 배치 크기, 학습률, 업데이트 계수
+- `evaluation`: 평가 에피소드 수, 모델 로드 경로, 결과 CSV/ROC 데이터 경로
+
 ### 3. 논문용 시각화
 
 ```bash
@@ -363,3 +376,33 @@ pip install -r requirements.txt
 본 프로젝트는 공군사관학교 소프트웨어응용(26-1학기) 연구 목적으로 작성되었습니다.
 
 **저장소**: [https://github.com/leeejunseo/MARL_FANET_RESEARCH](https://github.com/leeejunseo/MARL_FANET_RESEARCH)
+---
+
+## 현재 구현 상태
+
+- `train.py`: MADDPG 학습 + `MaliciousNodeDetector` 기반 탐지 보상 셰이핑 적용
+- `eval.py`: 악의적 행동 시나리오별 평가 반복 및 `logs/eval_metrics.csv` 저장
+- `test.py`: 학습 모델 로드 평가, Tacview ACMI 생성, 평가 메트릭 CSV 저장
+- `config.yaml`: 평가 시나리오, 탐지 보상, ablation 설정 지원
+- `utils/metrics_logger.py`: 평가 로그에 시나리오 항목 추가
+- `utils/plot_roc_auc.py`: 평가 기반 ROC/AUC 로딩 및 시나리오별 저장 경로 지원
+- `utils/plot_bar_comparison.py`: 실제 평가 메트릭을 기반으로 EMARL-XAI 성능 반영
+- `analysis/xai_explainer.py`: Integrated Gradients 기반 XAI 분석 모듈
+- `ns3_wrapper/fanet_env.py`: FANET 환경에 블랙홀/Selective Forwarding/Sybil 악의적 행동 모델 추가
+
+## 아직 해야 할 작업
+
+- `ns3_wrapper/fanet_env.py`에서 실제 NS-3 연동 구현
+  - 현재는 Python 내부 시뮬레이션만 사용
+  - NS-3 gRPC/ZMQ 또는 WSL2 기반 연동을 통해 실제 무선 채널/패킷 전달을 반영해야 함
+- `utils/plot_bar_comparison.py`의 AODV/Standard MARL 비교값을 모두 실제 평가 데이터로 채우기
+  - 현재 EMARL-XAI 값만 평가 데이터와 동기화됨
+- `utils/plot_roc_auc.py`의 다중 시나리오 ROC 시각화 강화
+  - 시나리오별 ROC 곡선 표시 및 비교 그래프 추가 필요
+- `utils/plot_xai_heatmap.py`에서 실제 Actor 모델 기반 XAI 분석 우선 사용
+  - 현재 모델 로드 실패 시 surrogate fallback 사용
+- `test.py`의 평가 로그 및 시나리오별 메트릭 저장 확대
+- `agents/maddpg.py`의 탐지 보상 정보가 Critic 학습/정책 업데이트에 더 깊게 반영되도록 개선
+- `config.yaml` 기반 ablation/시나리오 전환을 `train.py`/`eval.py`에서 더 명확하게 제어
+- 전체 실험 파이프라인 자동화
+  - `run_all.py` 또는 `make` 스타일 스크립트로 학습 → 평가 → 시각화 일괄 실행

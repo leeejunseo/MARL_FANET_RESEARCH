@@ -11,13 +11,44 @@ class MetricsLogger:
         if not os.path.exists(filepath):
             with open(filepath, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["episode", "total_reward", "avg_reward_per_drone"])
+                writer.writerow([
+                    "episode",
+                    "total_reward",
+                    "avg_reward_per_drone",
+                    "avg_pdr",
+                    "avg_delay_ms",
+                    "avg_hop",
+                    "avg_trust",
+                    "avg_disconnect",
+                    "avg_detection",
+                ])
 
-    def log_episode(self, episode, total_reward, num_drones):
+    def log_episode(
+        self,
+        episode,
+        total_reward,
+        num_drones,
+        avg_pdr=None,
+        avg_delay_ms=None,
+        avg_hop=None,
+        avg_trust=None,
+        avg_disconnect=None,
+        avg_detection=None,
+    ):
         avg = total_reward / num_drones
         with open(self.filepath, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([episode, f"{total_reward:.4f}", f"{avg:.4f}"])
+            writer.writerow([
+                episode,
+                f"{total_reward:.4f}",
+                f"{avg:.4f}",
+                f"{avg_pdr:.4f}" if avg_pdr is not None else "",
+                f"{avg_delay_ms:.4f}" if avg_delay_ms is not None else "",
+                f"{avg_hop:.4f}" if avg_hop is not None else "",
+                f"{avg_trust:.4f}" if avg_trust is not None else "",
+                f"{avg_disconnect:.4f}" if avg_disconnect is not None else "",
+                f"{avg_detection:.4f}" if avg_detection is not None else "",
+            ])
 
     @staticmethod
     def load_rewards(filepath="logs/training_rewards.csv"):
@@ -33,3 +64,58 @@ class MetricsLogger:
         if not episodes:
             return None, None
         return np.array(episodes), np.array(rewards)
+
+
+class EvalMetricsLogger:
+    def __init__(self, filepath="logs/eval_metrics.csv"):
+        self.filepath = filepath
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        if not os.path.exists(filepath):
+            with open(filepath, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "episode",
+                    "scenario",
+                    "total_reward",
+                    "avg_pdr",
+                    "avg_delay_ms",
+                    "avg_hop",
+                    "avg_trust",
+                    "avg_disconnect",
+                    "avg_detection",
+                ])
+
+    def log_episode(self, episode, stats, scenario="Default"):
+        with open(self.filepath, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                episode,
+                scenario,
+                f"{stats['total_reward']:.4f}",
+                f"{stats['avg_pdr']:.4f}",
+                f"{stats['avg_delay_ms']:.4f}",
+                f"{stats['avg_hop']:.4f}",
+                f"{stats['avg_trust']:.4f}",
+                f"{stats['avg_disconnect']:.4f}",
+                f"{stats['avg_detection']:.4f}" if stats['avg_detection'] is not None else "",
+            ])
+
+    @staticmethod
+    def load_eval_metrics(filepath="logs/eval_metrics.csv"):
+        if not os.path.exists(filepath):
+            return None
+        metrics = []
+        with open(filepath, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                metrics.append({
+                    "episode": int(row["episode"]),
+                    "scenario": row.get("scenario", "Default"),
+                    "avg_pdr": float(row["avg_pdr"]),
+                    "avg_delay_ms": float(row["avg_delay_ms"]),
+                    "avg_hop": float(row["avg_hop"]),
+                    "avg_trust": float(row["avg_trust"]),
+                    "avg_disconnect": float(row["avg_disconnect"]),
+                    "avg_detection": float(row["avg_detection"]) if row["avg_detection"] else None,
+                })
+        return metrics

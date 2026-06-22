@@ -15,6 +15,13 @@ from analysis.malicious_detector import (
 from utils.plot_style import apply_thesis_style, save_figure, COLORS
 
 
+def load_eval_node_features(filepath="logs/eval_node_features.npz"):
+    if not os.path.exists(filepath):
+        return None, None
+    with np.load(filepath) as data:
+        return data["features"], data["labels"]
+
+
 MODEL_CONFIGS = [
     {
         "name": "EMARL-XAI (Proposed)",
@@ -46,11 +53,17 @@ MODEL_CONFIGS = [
 ]
 
 
-def plot_roc_auc(save_path="logs/roc_curve_auc.png", compare_models=True):
+def plot_roc_auc(save_path="logs/roc_curve_auc.png", compare_models=True, roc_data_path="logs/eval_node_features.npz"):
     apply_thesis_style()
     print("=== ROC Curve & AUC 그래프 생성 ===")
 
-    features, labels = generate_node_dataset()
+    features, labels = load_eval_node_features(roc_data_path)
+    if features is not None and labels is not None:
+        print(f"  -> 환경 기반 평가 데이터 로드: {roc_data_path}")
+    else:
+        print("  -> 환경 기반 ROC 데이터가 없어 합성 데이터로 fallback합니다.")
+        features, labels = generate_node_dataset()
+
     configs = MODEL_CONFIGS if compare_models else MODEL_CONFIGS[:1]
 
     fig, ax = plt.subplots(figsize=(8, 8))

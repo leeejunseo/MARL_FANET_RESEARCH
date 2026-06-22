@@ -15,6 +15,8 @@ from analysis.xai_explainer import (
     integrated_gradients,
     compute_feature_importance,
     compute_correlation_heatmap,
+    load_actor_weights,
+    integrated_gradients_actor,
 )
 from utils.plot_style import apply_thesis_style, save_figure, COLORS
 
@@ -52,9 +54,21 @@ def plot_shap_summary(save_path="logs/xai_shap_summary.png"):
     print("=== XAI SHAP Summary Plot 생성 ===")
 
     observations = build_extended_observations(n_samples=400)
-    model = RoutingSurrogate(input_dim=len(FEATURE_NAMES))
-    train_surrogate(model, observations)
-    attributions = integrated_gradients(model, observations)
+    actor_weights = "models/weights/actor_agent_0_ep_1000.pth"
+    if os.path.exists(actor_weights):
+        try:
+            actor = load_actor_weights(actor_weights, obs_dim=len(FEATURE_NAMES), action_dim=3)
+            attributions = integrated_gradients_actor(actor, observations)
+            print("  -> 실제 Actor 기반 XAI 분석 사용")
+        except Exception:
+            model = RoutingSurrogate(input_dim=len(FEATURE_NAMES))
+            train_surrogate(model, observations)
+            attributions = integrated_gradients(model, observations)
+            print("  -> Actor 로드 실패, surrogate 모델로 대체")
+    else:
+        model = RoutingSurrogate(input_dim=len(FEATURE_NAMES))
+        train_surrogate(model, observations)
+        attributions = integrated_gradients(model, observations)
 
     # SHAP beeswarm 스타일: y=특성, x=기여도, 색=특성값
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -85,9 +99,22 @@ def plot_feature_importance_bar(save_path="logs/xai_feature_importance.png"):
     print("=== XAI 특성 중요도 바 차트 생성 ===")
 
     observations = build_extended_observations(n_samples=500)
-    model = RoutingSurrogate(input_dim=len(FEATURE_NAMES))
-    train_surrogate(model, observations)
-    attributions = integrated_gradients(model, observations)
+    actor_weights = "models/weights/actor_agent_0_ep_1000.pth"
+    if os.path.exists(actor_weights):
+        try:
+            actor = load_actor_weights(actor_weights, obs_dim=len(FEATURE_NAMES), action_dim=3)
+            attributions = integrated_gradients_actor(actor, observations)
+            print("  -> 실제 Actor 기반 XAI 중요도 분석 사용")
+        except Exception:
+            model = RoutingSurrogate(input_dim=len(FEATURE_NAMES))
+            train_surrogate(model, observations)
+            attributions = integrated_gradients(model, observations)
+            print("  -> Actor 로드 실패, surrogate 모델로 대체")
+    else:
+        model = RoutingSurrogate(input_dim=len(FEATURE_NAMES))
+        train_surrogate(model, observations)
+        attributions = integrated_gradients(model, observations)
+
     importance = compute_feature_importance(attributions)
 
     sorted_idx = np.argsort(importance)

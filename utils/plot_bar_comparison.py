@@ -1,5 +1,6 @@
 """프로토콜 간 PDR·Delay·Accuracy 바 차트 비교."""
 
+import csv
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -11,6 +12,21 @@ from utils.plot_style import apply_thesis_style, save_figure, COLORS
 
 
 # 시뮬레이션 환경별 성능 데이터 (정상 / 악의적 공격)
+def load_eval_metrics(filepath="logs/eval_metrics.csv"):
+    if not os.path.exists(filepath):
+        return None
+    values = []
+    with open(filepath, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            values.append({
+                "avg_pdr": float(row["avg_pdr"]),
+                "avg_delay_ms": float(row["avg_delay_ms"]),
+                "avg_detection": float(row["avg_detection"]) if row["avg_detection"] else None,
+            })
+    return values
+
+
 COMPARISON_DATA = {
     "Normal": {
         "metrics": ["PDR (%)", "Delay (ms)", "Detection\nAccuracy (%)"],
@@ -32,6 +48,38 @@ def plot_bar_comparison(save_path="logs/protocol_comparison_bar.png"):
     print("=== 프로토콜 성능 비교 바 차트 생성 ===")
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    eval_data = load_eval_metrics("logs/eval_metrics.csv")
+    if eval_data:
+        grouped = {}
+        for row in eval_data:
+            grouped.setdefault(row["scenario"], []).append(row)
+
+        if "Default" in grouped:
+            rows = grouped["Default"]
+            avg_pdr = np.mean([d["avg_pdr"] for d in rows]) * 100.0
+            avg_delay = np.mean([d["avg_delay_ms"] for d in rows])
+            avg_detection = None
+            if any(d["avg_detection"] is not None for d in rows):
+                avg_detection = np.mean([d["avg_detection"] for d in rows if d["avg_detection"] is not None]) * 100.0
+            COMPARISON_DATA["Normal"]["EMARL-XAI"] = [
+                avg_pdr,
+                avg_delay,
+                avg_detection if avg_detection is not None else COMPARISON_DATA["Normal"]["EMARL-XAI"][2],
+            ]
+
+        blackhole_rows = grouped.get("Blackhole") or grouped.get("Malicious Attack") or []
+        if blackhole_rows:
+            avg_pdr = np.mean([d["avg_pdr"] for d in blackhole_rows]) * 100.0
+            avg_delay = np.mean([d["avg_delay_ms"] for d in blackhole_rows])
+            avg_detection = None
+            if any(d["avg_detection"] is not None for d in blackhole_rows):
+                avg_detection = np.mean([d["avg_detection"] for d in blackhole_rows if d["avg_detection"] is not None]) * 100.0
+            COMPARISON_DATA["Malicious Attack"]["EMARL-XAI"] = [
+                avg_pdr,
+                avg_delay,
+                avg_detection if avg_detection is not None else COMPARISON_DATA["Malicious Attack"]["EMARL-XAI"][2],
+            ]
+
     protocols = ["AODV", "Standard MARL", "EMARL-XAI"]
     colors = [COLORS["aodv"], COLORS["marl"], COLORS["emarl"]]
     x = np.arange(3)

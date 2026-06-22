@@ -1,5 +1,6 @@
 """ROC Curve & AUC 시각화."""
 
+import glob
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +21,11 @@ def load_eval_node_features(filepath="logs/eval_node_features.npz"):
         return None, None
     with np.load(filepath) as data:
         return data["features"], data["labels"]
+
+
+def discover_scenario_roc_files(template="logs/eval_node_features_{scenario}.npz"):
+    search_pattern = template.replace("{scenario}", "*")
+    return sorted(glob.glob(search_pattern))
 
 
 MODEL_CONFIGS = [
@@ -53,49 +59,89 @@ MODEL_CONFIGS = [
 ]
 
 
-def plot_roc_auc(save_path="logs/roc_curve_auc.png", compare_models=True, roc_data_path="logs/eval_node_features.npz"):
+def plot_roc_auc(
+    save_path="logs/roc_curve_auc.png",
+    compare_models=True,
+    roc_data_path="logs/eval_node_features.npz",
+    roc_data_template="logs/eval_node_features_{scenario}.npz",
+):
     apply_thesis_style()
     print("=== ROC Curve & AUC 그래프 생성 ===")
 
-    features, labels = load_eval_node_features(roc_data_path)
-    if features is not None and labels is not None:
-        print(f"  -> 환경 기반 평가 데이터 로드: {roc_data_path}")
+    scenario_paths = discover_scenario_roc_files(roc_data_template)
+    features, labels = None, None
+
+    if scenario_paths:
+        print(f"  -> 시나리오별 ROC 데이터 파일 발견: {len(scenario_paths)}개")
     else:
-        print("  -> 환경 기반 ROC 데이터가 없어 합성 데이터로 fallback합니다.")
-        features, labels = generate_node_dataset()
+        features, labels = load_eval_node_features(roc_data_path)
+        if features is not None and labels is not None:
+            print(f"  -> 통합 ROC 데이터 로드: {roc_data_path}")
+        else:
+            print("  -> ROC 데이터가 없어 합성 데이터로 fallback합니다.")
+            features, labels = generate_node_dataset()
 
     configs = MODEL_CONFIGS if compare_models else MODEL_CONFIGS[:1]
-
-    fig, ax = plt.subplots(figsize=(8, 8))
-
+    fig, ax = plt.subplots(figsize=(10, 9))
     results = {}
-    for cfg in configs:
-        detector = MaliciousNodeDetector(
-            weights=np.array(cfg["weights"]),
-            temperature=cfg["temperature"],
-            bias=cfg["bias"],
-        )
-        fpr, tpr, roc_auc = evaluate_roc(
-            detector, features, labels, degradation=cfg["degradation"]
-        )
-        results[cfg["name"]] = roc_auc
 
-        ax.fill_between(fpr, tpr, alpha=0.15, color=cfg["color"])
-        ax.plot(
-            fpr, tpr,
-            color=cfg["color"], linewidth=2.8,
-            label=f"{cfg['name']} (AUC = {roc_auc:.3f})",
-        )
+    if scenario_paths:
+        for scenario_path in scenario_paths:
+            scenario_name = os.path.splitext(os.path.basename(scenario_path))[0].replace("eval_node_features_", "")
+            scenario_features, scenario_labels = load_eval_node_features(scenario_path)
+            if scenario_features is None or scenario_labels is None:
+                continue
+
+            for cfg in configs:
+                detector = MaliciousNodeDetector(
+                    weights=np.array(cfg["weights"]),
+                    temperature=cfg["temperature"],
+                    bias=cfg["bias"],
+                )
+                fpr, tpr, roc_auc = evaluate_roc(
+                    detector,
+                    scenario_features,
+                    scenario_labels,
+                    degradation=cfg["degradation"],
+                )
+                label = f"{cfg['name']} ({scenario_name})"
+                results[label] = roc_auc
+                ax.plot(
+                    fpr,
+                    tpr,
+                    linewidth=2.2,
+                    label=f"{label} (AUC={roc_auc:.3f})",
+                    color=cfg["color"],
+                    alpha=0.9,
+                    linestyle="-" if scenario_name == "default" else "--",
+                )
+    else:
+        for cfg in configs:
+            detector = MaliciousNodeDetector(
+                weights=np.array(cfg["weights"]),
+                temperature=cfg["temperature"],
+                bias=cfg["bias"],
+            )
+            fpr, tpr, roc_auc = evaluate_roc(
+                detector, features, labels, degradation=cfg["degradation"]
+            )
+            results[cfg["name"]] = roc_auc
+            ax.plot(
+                fpr,
+                tpr,
+                color=cfg["color"],
+                linewidth=2.8,
+                label=f"{cfg['name']} (AUC = {roc_auc:.3f})",
+            )
 
     ax.plot([0, 1], [0, 1], "k--", alpha=0.45, linewidth=1.5,
             label="Random Classifier (AUC = 0.500)")
-
     ax.set_xlim(-0.02, 1.02)
     ax.set_ylim(-0.02, 1.05)
     ax.set_xlabel("False Positive Rate (FPR)")
     ax.set_ylabel("True Positive Rate (TPR)")
     ax.set_title("ROC Curve: Malicious Node Detection Performance", fontweight="bold", pad=15)
-    ax.legend(loc="lower right", framealpha=0.95)
+    ax.legend(loc="lower right", framealpha=0.95, fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.set_aspect("equal")
 

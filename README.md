@@ -31,6 +31,7 @@ FANET(Flying Ad-hoc Network)은 드론 간 동적 무선 통신망으로, 군사
 - **악의적 노드 탐지** (`analysis/malicious_detector.py`)
   - SNR, Trust Score, Hop Count, Packet Drop Rate, Latency 기반 이상 점수 산출
   - ROC/AUC로 AODV·Standard MARL·EMARL-XAI 탐지 성능 비교
+  - 평가 데이터 기반 시나리오별 ROC 시각화 지원
 - **XAI 설명 모듈** (`analysis/xai_explainer.py`)
   - Integrated Gradients 기반 특성 기여도 분석
   - 히트맵, SHAP Summary Plot, 특성 중요도 바 차트 생성
@@ -65,6 +66,9 @@ marl_fanet_research/
 │   ├── plot_bar_comparison.py  # 프로토콜 성능 바 차트
 │   ├── plot_xai_heatmap.py     # XAI 히트맵 / SHAP Summary
 │   └── generate_all_plots.py   # 전체 시각화 일괄 생성
+├── Makefile                   # 전체 파이프라인 자동화
+├── run_all.py                 # 학습 → 평가 → 시각화 자동 실행
+├── run_all.bat               # Windows용 전체 실행 스크립트
 ├── requirements.txt
 ├── models/weights/             # 학습된 신경망 가중치 (.pth)
 └── logs/                         # Tacview ACMI, CSV, 그래프 출력
@@ -88,6 +92,15 @@ python test.py
 
 # 3. 논문용 그래프 일괄 생성
 python utils/generate_all_plots.py
+
+# 4. 전체 파이프라인 실행 (학습 → 평가 → 시각화)
+python run_all.py
+
+# 5. Windows 배치 실행
+run_all.bat
+
+# 6. Makefile 실행 (Windows용 make 또는 Linux/macOS)
+make run
 ```
 
 ---
@@ -188,8 +201,8 @@ python utils/plot_xai_heatmap.py      # XAI 분석
 
 ### 관측 / 행동 공간
 
-- **관측 (obs_dim=6)**: 정규화된 위치(3) + 속도(3) — 에이전트별 부분 관측
-- **전역 상태 (state_dim=18)**: 전체 드론 관측의 연결 — Critic 입력
+- **관측 (obs_dim=9)**: 정규화된 위치(3) + 속도(3) + Trust Score + SNR + Hop Count — 에이전트별 부분 관측
+- **전역 상태 (state_dim=27)**: 모든 드론 관측을 연결한 전체 상태 — Critic 입력
 - **행동 (action_dim=3)**: 3축 가속도 명령 [-1, 1]
 
 ### 보상 함수
@@ -383,26 +396,22 @@ pip install -r requirements.txt
 - `train.py`: MADDPG 학습 + `MaliciousNodeDetector` 기반 탐지 보상 셰이핑 적용
 - `eval.py`: 악의적 행동 시나리오별 평가 반복 및 `logs/eval_metrics.csv` 저장
 - `test.py`: 학습 모델 로드 평가, Tacview ACMI 생성, 평가 메트릭 CSV 저장
-- `config.yaml`: 평가 시나리오, 탐지 보상, ablation 설정 지원
+- `config.yaml`: 평가 시나리오, 탐지 보상, ablation 설정, baseline 비교값 지원 (`use_xai`, `use_trust`, `use_marl`)
 - `utils/metrics_logger.py`: 평가 로그에 시나리오 항목 추가
-- `utils/plot_roc_auc.py`: 평가 기반 ROC/AUC 로딩 및 시나리오별 저장 경로 지원
-- `utils/plot_bar_comparison.py`: 실제 평가 메트릭을 기반으로 EMARL-XAI 성능 반영
+- `utils/plot_roc_auc.py`: 평가 기반 ROC/AUC 로딩, 시나리오별 ROC 시각화 지원
+- `utils/plot_bar_comparison.py`: 실제 평가 메트릭을 기반으로 EMARL-XAI 성능 반영, baseline AODV/Standard MARL 비교 지원
 - `analysis/xai_explainer.py`: Integrated Gradients 기반 XAI 분석 모듈
 - `ns3_wrapper/fanet_env.py`: FANET 환경에 블랙홀/Selective Forwarding/Sybil 악의적 행동 모델 추가
+- `run_all.py`: 학습 → 평가 → 시각화 전체 파이프라인 자동 실행
+- `run_all.bat`: Windows용 전체 파이프라인 실행 스크립트
+- `Makefile`: Unix/Windows용 단일 명령 실행 규칙 제공
 
 ## 아직 해야 할 작업
 
 - `ns3_wrapper/fanet_env.py`에서 실제 NS-3 연동 구현
   - 현재는 Python 내부 시뮬레이션만 사용
   - NS-3 gRPC/ZMQ 또는 WSL2 기반 연동을 통해 실제 무선 채널/패킷 전달을 반영해야 함
-- `utils/plot_bar_comparison.py`의 AODV/Standard MARL 비교값을 모두 실제 평가 데이터로 채우기
-  - 현재 EMARL-XAI 값만 평가 데이터와 동기화됨
-- `utils/plot_roc_auc.py`의 다중 시나리오 ROC 시각화 강화
-  - 시나리오별 ROC 곡선 표시 및 비교 그래프 추가 필요
 - `utils/plot_xai_heatmap.py`에서 실제 Actor 모델 기반 XAI 분석 우선 사용
   - 현재 모델 로드 실패 시 surrogate fallback 사용
 - `test.py`의 평가 로그 및 시나리오별 메트릭 저장 확대
 - `agents/maddpg.py`의 탐지 보상 정보가 Critic 학습/정책 업데이트에 더 깊게 반영되도록 개선
-- `config.yaml` 기반 ablation/시나리오 전환을 `train.py`/`eval.py`에서 더 명확하게 제어
-- 전체 실험 파이프라인 자동화
-  - `run_all.py` 또는 `make` 스타일 스크립트로 학습 → 평가 → 시각화 일괄 실행

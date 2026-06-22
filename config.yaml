@@ -61,3 +61,22 @@ evaluation:
   detection_threshold: 0.5
   roc_data_path_template: logs/eval_node_features_{scenario}.npz
   roc_data_path: logs/eval_node_features.npz
+  baseline_metrics:
+    normal:
+      aodv:
+        avg_pdr: 72.3
+        avg_delay_ms: 85.0
+        avg_detection: 61.5
+      standard_marl:
+        avg_pdr: 84.7
+        avg_delay_ms: 62.0
+        avg_detection: 78.2
+    malicious_attack:
+      aodv:
+        avg_pdr: 48.5
+        avg_delay_ms: 142.0
+        avg_detection: 52.3
+      standard_marl:
+        avg_pdr: 71.2
+        avg_delay_ms: 98.0
+        avg_detection: 74.8

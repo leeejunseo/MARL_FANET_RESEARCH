@@ -27,8 +27,9 @@ def load_agents(env, config):
     obs_dim = env.obs_dim
     episode = config["evaluation"]["model_episode"]
     prefix = config["evaluation"]["actor_model_prefix"]
+    use_marl = config.get("training", {}).get("ablation", {}).get("use_marl", True)
 
-    agents = [MADDPGAgent(obs_dim, env.state_dim, action_dim, num_drones, agent_id=i) for i in range(num_drones)]
+    agents = [MADDPGAgent(obs_dim, env.state_dim, action_dim, num_drones, agent_id=i, use_marl=use_marl) for i in range(num_drones)]
     for i, agent in enumerate(agents):
         path = prefix.format(i=i, episode=episode)
         if not os.path.exists(path):

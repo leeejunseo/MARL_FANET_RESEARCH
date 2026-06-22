@@ -8,10 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import matplotlib.pyplot as plt
 import numpy as np
 
+from utils.config import load_config
 from utils.plot_style import apply_thesis_style, save_figure, COLORS
 
 
-# 시뮬레이션 환경별 성능 데이터 (정상 / 악의적 공격)
 def load_eval_metrics(filepath="logs/eval_metrics.csv"):
     if not os.path.exists(filepath):
         return None
@@ -20,6 +20,7 @@ def load_eval_metrics(filepath="logs/eval_metrics.csv"):
         reader = csv.DictReader(f)
         for row in reader:
             values.append({
+                "scenario": row.get("scenario", "Default"),
                 "avg_pdr": float(row["avg_pdr"]),
                 "avg_delay_ms": float(row["avg_delay_ms"]),
                 "avg_detection": float(row["avg_detection"]) if row["avg_detection"] else None,
@@ -27,7 +28,7 @@ def load_eval_metrics(filepath="logs/eval_metrics.csv"):
     return values
 
 
-COMPARISON_DATA = {
+DEFAULT_COMPARISON_DATA = {
     "Normal": {
         "metrics": ["PDR (%)", "Delay (ms)", "Detection\nAccuracy (%)"],
         "AODV": [72.3, 85.0, 61.5],
@@ -43,11 +44,50 @@ COMPARISON_DATA = {
 }
 
 
+def build_comparison_data():
+    config = load_config()
+    eval_cfg = config.get("evaluation", {})
+    baseline = eval_cfg.get("baseline_metrics", {})
+    data = {
+        "Normal": {
+            "metrics": ["PDR (%)", "Delay (ms)", "Detection\nAccuracy (%)"],
+            "AODV": [72.3, 85.0, 61.5],
+            "Standard MARL": [84.7, 62.0, 78.2],
+            "EMARL-XAI": [93.1, 48.0, 94.6],
+        },
+        "Malicious Attack": {
+            "metrics": ["PDR (%)", "Delay (ms)", "Detection\nAccuracy (%)"],
+            "AODV": [48.5, 142.0, 52.3],
+            "Standard MARL": [71.2, 98.0, 74.8],
+            "EMARL-XAI": [88.4, 55.0, 91.2],
+        },
+    }
+
+    normal = baseline.get("normal", {})
+    if "aodv" in normal:
+        aodv = normal["aodv"]
+        data["Normal"]["AODV"] = [aodv.get("avg_pdr", data["Normal"]["AODV"][0]), aodv.get("avg_delay_ms", data["Normal"]["AODV"][1]), aodv.get("avg_detection", data["Normal"]["AODV"][2])]
+    if "standard_marl" in normal:
+        marl = normal["standard_marl"]
+        data["Normal"]["Standard MARL"] = [marl.get("avg_pdr", data["Normal"]["Standard MARL"][0]), marl.get("avg_delay_ms", data["Normal"]["Standard MARL"][1]), marl.get("avg_detection", data["Normal"]["Standard MARL"][2])]
+
+    attack = baseline.get("malicious_attack", {})
+    if "aodv" in attack:
+        aodv = attack["aodv"]
+        data["Malicious Attack"]["AODV"] = [aodv.get("avg_pdr", data["Malicious Attack"]["AODV"][0]), aodv.get("avg_delay_ms", data["Malicious Attack"]["AODV"][1]), aodv.get("avg_detection", data["Malicious Attack"]["AODV"][2])]
+    if "standard_marl" in attack:
+        marl = attack["standard_marl"]
+        data["Malicious Attack"]["Standard MARL"] = [marl.get("avg_pdr", data["Malicious Attack"]["Standard MARL"][0]), marl.get("avg_delay_ms", data["Malicious Attack"]["Standard MARL"][1]), marl.get("avg_detection", data["Malicious Attack"]["Standard MARL"][2])]
+
+    return data
+
+
 def plot_bar_comparison(save_path="logs/protocol_comparison_bar.png"):
     apply_thesis_style()
     print("=== 프로토콜 성능 비교 바 차트 생성 ===")
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    data = build_comparison_data()
     eval_data = load_eval_metrics("logs/eval_metrics.csv")
     if eval_data:
         grouped = {}
@@ -61,23 +101,27 @@ def plot_bar_comparison(save_path="logs/protocol_comparison_bar.png"):
             avg_detection = None
             if any(d["avg_detection"] is not None for d in rows):
                 avg_detection = np.mean([d["avg_detection"] for d in rows if d["avg_detection"] is not None]) * 100.0
-            COMPARISON_DATA["Normal"]["EMARL-XAI"] = [
+            data["Normal"]["EMARL-XAI"] = [
                 avg_pdr,
                 avg_delay,
-                avg_detection if avg_detection is not None else COMPARISON_DATA["Normal"]["EMARL-XAI"][2],
+                avg_detection if avg_detection is not None else data["Normal"]["EMARL-XAI"][2],
             ]
 
-        blackhole_rows = grouped.get("Blackhole") or grouped.get("Malicious Attack") or []
-        if blackhole_rows:
-            avg_pdr = np.mean([d["avg_pdr"] for d in blackhole_rows]) * 100.0
-            avg_delay = np.mean([d["avg_delay_ms"] for d in blackhole_rows])
+        malicious_rows = []
+        for scenario_name, rows in grouped.items():
+            if scenario_name != "Default":
+                malicious_rows.extend(rows)
+
+        if malicious_rows:
+            avg_pdr = np.mean([d["avg_pdr"] for d in malicious_rows]) * 100.0
+            avg_delay = np.mean([d["avg_delay_ms"] for d in malicious_rows])
             avg_detection = None
-            if any(d["avg_detection"] is not None for d in blackhole_rows):
-                avg_detection = np.mean([d["avg_detection"] for d in blackhole_rows if d["avg_detection"] is not None]) * 100.0
-            COMPARISON_DATA["Malicious Attack"]["EMARL-XAI"] = [
+            if any(d["avg_detection"] is not None for d in malicious_rows):
+                avg_detection = np.mean([d["avg_detection"] for d in malicious_rows if d["avg_detection"] is not None]) * 100.0
+            data["Malicious Attack"]["EMARL-XAI"] = [
                 avg_pdr,
                 avg_delay,
-                avg_detection if avg_detection is not None else COMPARISON_DATA["Malicious Attack"]["EMARL-XAI"][2],
+                avg_detection if avg_detection is not None else data["Malicious Attack"]["EMARL-XAI"][2],
             ]
 
     protocols = ["AODV", "Standard MARL", "EMARL-XAI"]
@@ -85,12 +129,12 @@ def plot_bar_comparison(save_path="logs/protocol_comparison_bar.png"):
     x = np.arange(3)
     width = 0.22
 
-    for ax_idx, (scenario, data) in enumerate(COMPARISON_DATA.items()):
+    for ax_idx, (scenario, scenario_data) in enumerate(data.items()):
         ax = axes[ax_idx]
-        metrics = data["metrics"]
+        metrics = scenario_data["metrics"]
 
         for i, protocol in enumerate(protocols):
-            values = data[protocol]
+            values = scenario_data[protocol]
             bars = ax.bar(
                 x + i * width, values, width,
                 label=protocol, color=colors[i], alpha=0.88, edgecolor="white",

@@ -47,7 +47,15 @@ def main():
     tau = training_cfg["tau"]
     ablation_cfg = training_cfg.get("ablation", {})
 
-    agents = [MADDPGAgent(env.obs_dim, env.state_dim, env.action_dim, num_drones, agent_id=i, lr=lr) for i in range(num_drones)]
+    agents = [MADDPGAgent(
+        env.obs_dim,
+        env.state_dim,
+        env.action_dim,
+        num_drones,
+        agent_id=i,
+        lr=lr,
+        use_marl=ablation_cfg.get("use_marl", True),
+    ) for i in range(num_drones)]
     replay_buffer = ReplayBuffer(100000, env.obs_dim, env.state_dim, env.action_dim, num_drones)
     
     # 학습 하이퍼파라미터
@@ -132,27 +140,6 @@ def main():
             hop_values.append(info.get("avg_hop", 0.0))
             trust_values.append(np.mean(info.get("trust_scores", [0.0])))
             disconnect_values.append(info.get("disconnect_ratio", 0.0))
-
-            if info.get("node_features") is not None and info.get("node_labels") is not None:
-                proba = detector.predict_proba(info["node_features"])
-                predicted = (proba >= training_cfg.get("detection_threshold", 0.5)).astype(int)
-                detection_rates.append(np.mean(predicted == info["node_labels"]))
-
-                detection_cfg = training_cfg.get("detection_reward", {})
-                tp_reward = detection_cfg.get("tp", 0.5)
-                fp_penalty = detection_cfg.get("fp", -0.2)
-                fn_penalty = detection_cfg.get("fn", -0.5)
-                tn_reward = detection_cfg.get("tn", 0.0)
-                shaped_rewards = np.zeros(num_drones, dtype=np.float32)
-
-                for i in range(num_drones):
-                    if info["node_labels"][i] == 1:
-                        shaped_rewards[i] += tp_reward if predicted[i] == 1 else fn_penalty
-                    else:
-                        shaped_rewards[i] += tn_reward if predicted[i] == 0 else fp_penalty
-
-                rewards = rewards + shaped_rewards
-                info["detection_shaping"] = shaped_rewards.tolist()
 
             if global_step >= warmup_steps and replay_buffer.size >= batch_size:
                 sample_data = replay_buffer.sample(batch_size)

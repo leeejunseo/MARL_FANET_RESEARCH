@@ -32,7 +32,7 @@ def plot_convergence(
 
     episodes, raw_rewards = MetricsLogger.load_rewards(csv_path)
     if episodes is None:
-        print("  [알림] training_rewards.csv 없음 — 합성 데이터 사용")
+        print("  [알림] training_rewards.csv 없음 - 합성 데이터 사용")
         episodes, raw_rewards = _synthetic_rewards()
     else:
         print(f"  [알림] {len(episodes)}개 에피소드 실측 데이터 사용")

@@ -5,6 +5,7 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import csv
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -57,6 +58,17 @@ MODEL_CONFIGS = [
         "degradation": {"flip_rate": 0.16, "noise_std": 0.11, "seed": 44},
     },
 ]
+
+
+def load_eval_metrics(filepath="logs/eval_metrics.csv"):
+    if not os.path.exists(filepath):
+        return None
+    rows = []
+    with open(filepath, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    return rows
 
 
 def plot_roc_auc(
@@ -134,6 +146,27 @@ def plot_roc_auc(
                 label=f"{cfg['name']} (AUC = {roc_auc:.3f})",
             )
 
+    eval_rows = load_eval_metrics("logs/eval_metrics.csv")
+    detection_text = []
+    if eval_rows:
+        grouped = {}
+        for row in eval_rows:
+            grouped.setdefault(row.get("scenario", "Default"), []).append(row)
+
+        for scenario_name, rows in grouped.items():
+            accuracy_vals = [float(r["avg_detection_accuracy"]) for r in rows if r.get("avg_detection_accuracy")]
+            precision_vals = [float(r["avg_detection_precision"]) for r in rows if r.get("avg_detection_precision")]
+            recall_vals = [float(r["avg_detection_recall"]) for r in rows if r.get("avg_detection_recall")]
+            f1_vals = [float(r["avg_detection_f1"]) for r in rows if r.get("avg_detection_f1")]
+            if accuracy_vals and precision_vals and recall_vals and f1_vals:
+                mean_acc = np.mean(accuracy_vals) * 100.0
+                mean_prec = np.mean(precision_vals) * 100.0
+                mean_rec = np.mean(recall_vals) * 100.0
+                mean_f1 = np.mean(f1_vals) * 100.0
+                detection_text.append(
+                    f"{scenario_name}: Acc={mean_acc:.1f}%, Prec={mean_prec:.1f}%, Rec={mean_rec:.1f}%, F1={mean_f1:.1f}%"
+                )
+
     ax.plot([0, 1], [0, 1], "k--", alpha=0.45, linewidth=1.5,
             label="Random Classifier (AUC = 0.500)")
     ax.set_xlim(-0.02, 1.02)
@@ -144,6 +177,12 @@ def plot_roc_auc(
     ax.legend(loc="lower right", framealpha=0.95, fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.set_aspect("equal")
+
+    if detection_text:
+        text_y = 0.95
+        for line in detection_text:
+            ax.text(0.02, text_y, line, transform=ax.transAxes, fontsize=9, verticalalignment="top")
+            text_y -= 0.05
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     fig.tight_layout()

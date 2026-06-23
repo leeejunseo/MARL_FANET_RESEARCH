@@ -1,0 +1,2 @@
+episode,scenario,total_reward,avg_pdr,avg_delay_ms,avg_hop,avg_trust,avg_disconnect,avg_detection,avg_detection_accuracy,avg_detection_precision,avg_detection_recall,avg_detection_f1
+1,Default,28.5777,0.1578,243.6498,1.0000,0.0980,0.7778,0.4056,0.4056,0.3484,0.9000,0.5023

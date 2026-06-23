@@ -35,12 +35,14 @@ class Critic(nn.Module):
         return self.net(x)
 
 class MADDPGAgent:
-    def __init__(self, obs_dim, state_dim, action_dim, num_drones, agent_id, lr=1e-3, use_marl=True):
+    def __init__(self, obs_dim, state_dim, action_dim, num_drones, agent_id, lr=1e-3, use_marl=True, actor_obs_dim=None):
         self.agent_id = agent_id
         self.use_marl = use_marl
+        self.obs_dim = obs_dim
+        self.actor_obs_dim = actor_obs_dim if actor_obs_dim is not None else obs_dim
         
         # 메인 네트워크 생성
-        self.actor = Actor(obs_dim, action_dim)
+        self.actor = Actor(self.actor_obs_dim, action_dim)
         critic_state_dim = state_dim if use_marl else obs_dim
         critic_num_drones = num_drones if use_marl else 1
         self.critic = Critic(critic_state_dim, action_dim, critic_num_drones)
@@ -55,7 +57,13 @@ class MADDPGAgent:
         
         self.action_dim = action_dim
 
+    def _prepare_actor_obs(self, obs):
+        if obs.shape[-1] > self.actor_obs_dim:
+            return obs[..., : self.actor_obs_dim]
+        return obs
+
     def act(self, obs, explore=True):
+        obs = self._prepare_actor_obs(np.asarray(obs, dtype=np.float32))
         obs_tensor = torch.FloatTensor(obs).unsqueeze(0)
         with torch.no_grad():
             action = self.actor(obs_tensor).squeeze(0).numpy()
@@ -116,11 +124,11 @@ class MADDPGAgent:
         # -------------------------------------------------------------
         if self.use_marl:
             eval_actions = actions_t.clone()
-            eval_actions[:, self.agent_id] = self.actor(obs_t[:, self.agent_id])
+            eval_actions[:, self.agent_id] = self.actor(self._prepare_actor_obs(obs_t[:, self.agent_id]))
             eval_actions_flat = eval_actions.view(batch_size, -1)
             actor_loss = -self.critic(states_t, eval_actions_flat).mean()
         else:
-            local_obs = obs_t[:, self.agent_id]
+            local_obs = self._prepare_actor_obs(obs_t[:, self.agent_id])
             actor_loss = -self.critic(local_obs, self.actor(local_obs)).mean()
         
         self.actor_optimizer.zero_grad()

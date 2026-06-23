@@ -83,6 +83,10 @@ class EvalMetricsLogger:
                     "avg_trust",
                     "avg_disconnect",
                     "avg_detection",
+                    "avg_detection_accuracy",
+                    "avg_detection_precision",
+                    "avg_detection_recall",
+                    "avg_detection_f1",
                 ])
 
     def log_episode(self, episode, stats, scenario="Default"):
@@ -98,6 +102,10 @@ class EvalMetricsLogger:
                 f"{stats['avg_trust']:.4f}",
                 f"{stats['avg_disconnect']:.4f}",
                 f"{stats['avg_detection']:.4f}" if stats['avg_detection'] is not None else "",
+                f"{stats['avg_detection_accuracy']:.4f}" if stats.get('avg_detection_accuracy') is not None else "",
+                f"{stats['avg_detection_precision']:.4f}" if stats.get('avg_detection_precision') is not None else "",
+                f"{stats['avg_detection_recall']:.4f}" if stats.get('avg_detection_recall') is not None else "",
+                f"{stats['avg_detection_f1']:.4f}" if stats.get('avg_detection_f1') is not None else "",
             ])
 
     @staticmethod
@@ -117,5 +125,9 @@ class EvalMetricsLogger:
                     "avg_trust": float(row["avg_trust"]),
                     "avg_disconnect": float(row["avg_disconnect"]),
                     "avg_detection": float(row["avg_detection"]) if row["avg_detection"] else None,
+                    "avg_detection_accuracy": float(row["avg_detection_accuracy"]) if row.get("avg_detection_accuracy") else None,
+                    "avg_detection_precision": float(row["avg_detection_precision"]) if row.get("avg_detection_precision") else None,
+                    "avg_detection_recall": float(row["avg_detection_recall"]) if row.get("avg_detection_recall") else None,
+                    "avg_detection_f1": float(row["avg_detection_f1"]) if row.get("avg_detection_f1") else None,
                 })
         return metrics

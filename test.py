@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 from ns3_wrapper.fanet_env import AdvancedFANETEnv
@@ -6,6 +7,15 @@ from analysis.malicious_detector import MaliciousNodeDetector
 from utils.tacview_logger import TacviewLogger
 from utils.metrics_logger import EvalMetricsLogger
 from utils.config import load_config
+from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
+
+
+def infer_actor_obs_dim_from_checkpoint(path):
+    state_dict = torch.load(path, map_location="cpu")
+    for key, value in state_dict.items():
+        if key.endswith(".weight") and isinstance(value, torch.Tensor) and value.ndim == 2:
+            return value.shape[1]
+    raise ValueError(f"Cannot infer actor obs_dim from checkpoint: {path}")
 
 
 def test_inference():
@@ -25,18 +35,27 @@ def test_inference():
         malicious_drop_rate=env_cfg.get("malicious_drop_rate", 0.4),
         trust_noise=env_cfg.get("trust_noise", 0.05),
     )
-    agents = [MADDPGAgent(env.obs_dim, env.state_dim, env.action_dim, num_drones, agent_id=i) for i in range(num_drones)]
 
     model_prefix = eval_cfg["actor_model_prefix"]
     episode_to_load = eval_cfg["model_episode"]
-    try:
-        for i, agent in enumerate(agents):
-            path = model_prefix.format(i=i, episode=episode_to_load)
-            agent.actor.load_state_dict(torch.load(path, map_location="cpu"))
-        print(f"[성공] {episode_to_load} 에피소드 학습 모델 로드 완료")
-    except Exception as e:
-        print(f"[오류] 모델을 찾을 수 없습니다: {e}")
-        return
+    agents = []
+    for i in range(num_drones):
+        path = model_prefix.format(i=i, episode=episode_to_load)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Actor 모델을 찾을 수 없습니다: {path}")
+        actor_obs_dim = infer_actor_obs_dim_from_checkpoint(path)
+        agent = MADDPGAgent(
+            env.obs_dim,
+            env.state_dim,
+            env.action_dim,
+            num_drones,
+            agent_id=i,
+            actor_obs_dim=actor_obs_dim,
+        )
+        agent.actor.load_state_dict(torch.load(path, map_location="cpu"))
+        agents.append(agent)
+
+    print(f"[성공] {episode_to_load} 에피소드 학습 모델 로드 완료")
 
     obs, state = env.reset(seed=42)
     tacview = TacviewLogger("logs/swarm_test_eval.acmi")
@@ -50,6 +69,8 @@ def test_inference():
     trust_values = []
     disconnect_values = []
     detection_rates = []
+    step_labels = []
+    step_predictions = []
     episode_reward = 0.0
 
     for step in range(eval_cfg["max_steps"]):
@@ -69,14 +90,42 @@ def test_inference():
         disconnect_values.append(info.get("disconnect_ratio", 0.0))
 
         if info.get("node_features") is not None and info.get("node_labels") is not None:
-            proba = detector.predict_proba(info["node_features"])
+            features = info["node_features"]
+            labels = info["node_labels"]
+            proba = detector.predict_proba(features)
             predicted = (proba >= eval_cfg.get("detection_threshold", 0.5)).astype(int)
-            detection_rates.append(np.mean(predicted == info["node_labels"]))
+            detection_rates.append(np.mean(predicted == labels))
+            step_labels.append(labels)
+            step_predictions.append(predicted)
 
         obs = next_obs
         state = next_state
         if terminated:
             break
+
+    all_step_labels = np.concatenate(step_labels) if step_labels else None
+    all_step_predictions = np.concatenate(step_predictions) if step_predictions else None
+
+    detection_accuracy = (
+        float(accuracy_score(all_step_labels, all_step_predictions))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
+    detection_precision = (
+        float(precision_score(all_step_labels, all_step_predictions, average="binary", pos_label=1))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
+    detection_recall = (
+        float(recall_score(all_step_labels, all_step_predictions, average="binary", pos_label=1))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
+    detection_f1 = (
+        float(f1_score(all_step_labels, all_step_predictions, average="binary", pos_label=1))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
 
     stats = {
         "total_reward": episode_reward,
@@ -86,6 +135,10 @@ def test_inference():
         "avg_trust": float(np.mean(trust_values)) if trust_values else 0.0,
         "avg_disconnect": float(np.mean(disconnect_values)) if disconnect_values else 0.0,
         "avg_detection": float(np.mean(detection_rates)) if detection_rates else None,
+        "avg_detection_accuracy": detection_accuracy,
+        "avg_detection_precision": detection_precision,
+        "avg_detection_recall": detection_recall,
+        "avg_detection_f1": detection_f1,
     }
     logger.log_episode(1, stats)
     print("=== 평가 종료: logs/swarm_test_eval.acmi 파일 추출 완료 ===")

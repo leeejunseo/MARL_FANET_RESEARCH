@@ -90,16 +90,19 @@ python train.py
 # 2. 학습된 모델 평가 + Tacview 로그
 python test.py
 
-# 3. 논문용 그래프 일괄 생성
+# 3. 다중 에피소드 평가 및 탐지 메트릭 생성
+python eval.py
+
+# 4. 논문용 그래프 일괄 생성
 python utils/generate_all_plots.py
 
-# 4. 전체 파이프라인 실행 (학습 → 평가 → 시각화)
+# 5. 전체 파이프라인 실행 (학습 → 평가 → 시각화)
 python run_all.py
 
-# 5. Windows 배치 실행
+# 6. Windows 배치 실행
 run_all.bat
 
-# 6. Makefile 실행 (Windows용 make 또는 Linux/macOS)
+# 7. Makefile 실행 (Windows용 make 또는 Linux/macOS)
 make run
 ```
 
@@ -143,7 +146,11 @@ python test.py
 python eval.py
 ```
 
-정량적 평가를 위해 N 에피소드에 대해 평균 보상, PDR, 지연, 평균 hop, 트러스트, 탐지율, 통신 단절 비율을 `logs/eval_metrics.csv`에 저장하고, `logs/eval_node_features.npz`에는 ROC/AUC용 노드 특성 데이터를 저장합니다.
+정량적 평가를 위해 다중 에피소드에 걸쳐 평균 보상, PDR, 지연, 평균 hop, 트러스트, 탐지율, 통신 단절 비율을 `logs/eval_metrics.csv`에 저장합니다.
+또한 `logs/eval_node_features.npz`와 시나리오별 `logs/eval_node_features_{scenario}.npz` 파일을 생성해 ROC/AUC 분석 및 시각화에 사용합니다.
+
+- `eval.py`는 저장된 actor 체크포인트에서 입력 차원(`obs_dim`)을 자동 추론하여 기존 가중치와 현재 환경을 호환합니다.
+- `test.py`는 학습 모델을 로드해 Tacview 평가 로그를 생성하며, 평가 시 `logs/test_metrics.csv`도 만듭니다.
 
 ### 2.1 구성 파일
 
@@ -162,6 +169,7 @@ python utils/generate_all_plots.py
 python utils/plot_learning_curve.py   # 학습 수렴 곡선
 python utils/plot_roc_auc.py          # ROC & AUC
 python utils/plot_bar_comparison.py   # 프로토콜 비교
+python utils/plot_detection_metrics.py # 탐지 성능 지표 비교
 python utils/plot_xai_heatmap.py      # XAI 분석
 ```
 
@@ -170,6 +178,7 @@ python utils/plot_xai_heatmap.py      # XAI 분석
 | `plot_learning_curve.py` | `logs/learning_curve_high_dpi.png` | 에피소드별 보상 수렴 확인 |
 | `plot_roc_auc.py` | `logs/roc_curve_auc.png` | 악의적 노드 탐지 성능 (TPR vs FPR) |
 | `plot_bar_comparison.py` | `logs/protocol_comparison_bar.png` | PDR·Delay·Accuracy 프로토콜 비교 |
+| `plot_detection_metrics.py` | `logs/detection_metrics.png` | Precision/Recall/F1 탐지 지표 비교 |
 | `plot_xai_heatmap.py` | `logs/xai_*.png` | XAI 특성 기여도 분석 |
 
 > `train.py` 실행 후 `logs/training_rewards.csv`가 있으면 수렴 곡선은 **실측 데이터**를 사용합니다. 없으면 학습 트렌드 기반 합성 데이터로 대체됩니다.
@@ -328,6 +337,70 @@ $$R_i = 1.0 \cdot r_{cov} + 2.5 \cdot r_{col} + 3.0 \cdot r_{conn}$$
 |---|---|
 | SNR (dB) | 링크 신호 품질 |
 | Trust Score | 노드 신뢰도 (EMARL-XAI 핵심 변수) |
+
+---
+
+## 1. 모델 평가 지표 및 데이터 분할
+
+- **목적**: 모델의 일반화 성능과 실제 적용 가능성을 검증합니다.
+- **데이터 분할**: 학습 `Train`, 하이퍼파라미터 검사 `Validation`, 최종 일반화 평가 `Test` 세 집합으로 분리합니다.
+- **Train**: 모델 학습에 사용.
+- **Validation**: 과적합 탐지, 정규화 및 하이퍼파라미터 튜닝에 사용.
+- **Test**: 최종 비교 평가를 위해 학습/튜닝에 전혀 사용하지 않습니다.
+
+## 2. 분류 모델 성능 지표
+
+- **정확도(Accuracy)**: 전체 예측 중 정답 비율.
+- **혼동 행렬(Confusion Matrix)**
+  - TP: 실제 양성 중 양성으로 예측한 수.
+  - TN: 실제 음성 중 음성으로 예측한 수.
+  - FP: 실제 음성 중 양성으로 잘못 예측한 수.
+  - FN: 실제 양성 중 음성으로 잘못 예측한 수.
+- **정밀도(Precision)**: 예측 양성 중 실제 양성 비율 = TP / (TP + FP).
+- **재현율(Recall)**: 실제 양성 중 올바르게 예측한 비율 = TP / (TP + FN).
+- **F1-score**: 정밀도와 재현율의 조화 평균 = 2 * (Precision * Recall) / (Precision + Recall).
+
+## 3. ROC 곡선 및 AUC
+
+- **ROC 곡선**: 임계값을 바꾸며 TPR(재현율)과 FPR(위양성률)을 나타낸 그래프.
+- **AUC**: ROC 아래 면적. 1에 가까울수록 구분 능력이 우수하며 0.5는 무작위 분류기와 동일.
+- **용도**: 클래스 불균형 상황에서도 모델의 판별 능력을 비교할 때 유용합니다.
+
+## 4. 현재 구현 상태 및 추가 작업
+
+### 현재 구현 상태
+- `eval.py`에서 평가 데이터의 평균 탐지 정확도(`avg_detection_accuracy`), 정밀도(`avg_detection_precision`), 재현율(`avg_detection_recall`), F1(`avg_detection_f1`)을 계산하도록 구현되었습니다.
+- `test.py`에서도 동일한 분류 지표를 계산하여 `logs/test_metrics.csv`에 기록합니다.
+- `utils/metrics_logger.py`의 `EvalMetricsLogger`가 해당 필드를 CSV 헤더와 로그 기록에 포함하도록 복구되었습니다.
+- 평가 데이터는 시나리오별 ROC/AUC 저장용 `.npz` 파일과 `logs/eval_metrics.csv`에 기록됩니다.
+
+### 추가로 하면 좋은 작업
+- `utils/generate_all_plots.py`에 `logs/eval_metrics.csv` 기반의 Precision/Recall/F1 비교 그래프를 추가하면 더욱 완성도 있는 평가 자료가 됩니다.
+- `plot_roc_auc.py`에 평균 탐지 정확도/정밀도/재현율/F1 수치를 같이 표시해주면 논문용 분석 자료가 더 명확해집니다.
+- `config.yaml`의 `baseline_metrics` 값을 실제 평가 결과와 자동 비교하는 시각화 또는 표 생성 기능을 추가할 수 있습니다.
+- `README`의 평가 결과 예시 표에 `Detection Accuracy` 외에 `Precision`, `Recall`, `F1`를 함께 포함하면 비교 문서가 더 완전해집니다.
+
+## 5. 과적합/과소적합 방지를 위한 정규화
+
+- **Ridge 정규화 (L2)**: 가중치 제곱합을 손실에 추가하여 큰 가중치를 억제합니다.
+- **Lasso 정규화 (L1)**: 가중치 절댓값 합을 추가하여 일부 특성의 가중치를 0으로 만들고 특성 선택 효과를 냅니다.
+- **효과**: 모델 복잡도를 낮추어 과적합을 줄이고, 충분히 단순하지 않으면 과소적합 위험을 줄입니다.
+
+## 5. K-fold 교차 검증
+
+- **K-fold CV**: 데이터를 K개 폴드로 나누고, 각 폴드를 한 번씩 검증 세트로 사용하여 평균 성능을 평가합니다.
+- **장점**: 학습/검증 데이터 분할에 따른 편향을 줄여 하이퍼파라미터 튜닝을 안정화합니다.
+- **사용 사례**: 정규화 강도, 학습률, 모델 구조 등 최적값을 찾을 때 유용합니다.
+
+## 6. 회귀 모델 성능 지표
+
+- **MSE (Mean Squared Error)**: 예측 오차의 제곱 평균.
+- **RMSE (Root Mean Squared Error)**: MSE의 제곱근으로, 오차 단위를 원래 값과 맞춤.
+- **MAE (Mean Absolute Error)**: 절대 오차의 평균.
+- **MAPE (Mean Absolute Percentage Error)**: 예측 오차의 백분율 평균.
+- **R² (결정계수)**: 모델이 실제 변동성을 얼마나 설명하는지 나타내며 1에 가까울수록 좋습니다.
+
+---
 | Hop Count | 경로 홉 수 |
 | Packet Loss | 패킷 손실률 |
 | Node Degree | 이웃 노드 연결 수 |

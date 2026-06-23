@@ -9,6 +9,7 @@ from utils.plot_learning_curve import plot_convergence
 from utils.plot_roc_auc import plot_roc_auc
 from utils.plot_bar_comparison import plot_bar_comparison
 from utils.plot_xai_heatmap import plot_all_xai
+from utils.plot_detection_metrics import plot_detection_metrics
 
 
 def generate_all_plots():
@@ -19,16 +20,18 @@ def generate_all_plots():
     plot_convergence()
     plot_roc_auc()
     plot_bar_comparison()
+    plot_detection_metrics()
     plot_all_xai()
 
     print("\n" + "=" * 60)
-    print("  모든 그래프 생성 완료 — logs/ 디렉터리 확인")
+    print("  모든 그래프 생성 완료 - logs/ 디렉터리 확인")
     print("=" * 60)
     print("\n생성 파일:")
     outputs = [
         "logs/learning_curve_high_dpi.png",
         "logs/roc_curve_auc.png",
         "logs/protocol_comparison_bar.png",
+        "logs/detection_metrics.png",
         "logs/xai_feature_heatmap.png",
         "logs/xai_shap_summary.png",
         "logs/xai_feature_importance.png",

@@ -20,7 +20,10 @@ def _roc_curve(y_true, y_score):
 
 
 def _auc(fpr, tpr):
-    return float(np.trapz(tpr, fpr))
+    try:
+        return float(np.trapz(tpr, fpr))
+    except AttributeError:
+        return float(((tpr[1:] + tpr[:-1]) * (fpr[1:] - fpr[:-1]) / 2.0).sum())
 
 
 class MaliciousNodeDetector:

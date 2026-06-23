@@ -8,6 +8,7 @@ from agents.maddpg import MADDPGAgent
 from analysis.malicious_detector import MaliciousNodeDetector
 from utils.config import load_config
 from utils.metrics_logger import EvalMetricsLogger
+from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
 def apply_ablation_obs(obs, ablation_cfg):
@@ -21,6 +22,14 @@ def apply_ablation_obs(obs, ablation_cfg):
     return obs_out
 
 
+def infer_actor_obs_dim_from_checkpoint(path):
+    state_dict = torch.load(path, map_location="cpu")
+    for key, value in state_dict.items():
+        if key.endswith(".weight") and isinstance(value, torch.Tensor) and value.ndim == 2:
+            return value.shape[1]
+    raise ValueError(f"Cannot infer actor obs_dim from checkpoint: {path}")
+
+
 def load_agents(env, config):
     num_drones = config["environment"]["num_drones"]
     action_dim = env.action_dim
@@ -29,12 +38,23 @@ def load_agents(env, config):
     prefix = config["evaluation"]["actor_model_prefix"]
     use_marl = config.get("training", {}).get("ablation", {}).get("use_marl", True)
 
-    agents = [MADDPGAgent(obs_dim, env.state_dim, action_dim, num_drones, agent_id=i, use_marl=use_marl) for i in range(num_drones)]
-    for i, agent in enumerate(agents):
+    agents = []
+    for i in range(num_drones):
         path = prefix.format(i=i, episode=episode)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Actor 모델을 찾을 수 없습니다: {path}")
+        actor_obs_dim = infer_actor_obs_dim_from_checkpoint(path)
+        agent = MADDPGAgent(
+            obs_dim,
+            env.state_dim,
+            action_dim,
+            num_drones,
+            agent_id=i,
+            use_marl=use_marl,
+            actor_obs_dim=actor_obs_dim,
+        )
         agent.actor.load_state_dict(torch.load(path, map_location="cpu"))
+        agents.append(agent)
     return agents
 
 
@@ -52,6 +72,7 @@ def evaluate_episode(env, agents, max_steps, detection_threshold, ablation_cfg=N
     detector = MaliciousNodeDetector()
     step_features = []
     step_labels = []
+    step_predictions = []
 
     obs_for_action = apply_ablation_obs(obs, ablation_cfg)
     for _ in range(max_steps):
@@ -66,11 +87,14 @@ def evaluate_episode(env, agents, max_steps, detection_threshold, ablation_cfg=N
         disconnect_values.append(info["disconnect_ratio"])
 
         if info.get("node_features") is not None and info.get("node_labels") is not None:
-            step_features.append(info["node_features"])
-            step_labels.append(info["node_labels"])
-            proba = detector.predict_proba(info["node_features"])
+            features = info["node_features"]
+            labels = info["node_labels"]
+            proba = detector.predict_proba(features)
             predicted = (proba >= detection_threshold).astype(int)
-            detection_rates.append(np.mean(predicted == info["node_labels"]))
+            step_features.append(features)
+            step_labels.append(labels)
+            step_predictions.append(predicted)
+            detection_rates.append(np.mean(predicted == labels))
 
         obs = next_obs
         state = next_state
@@ -78,6 +102,31 @@ def evaluate_episode(env, agents, max_steps, detection_threshold, ablation_cfg=N
 
         if terminated:
             break
+
+    all_step_features = np.vstack(step_features) if step_features else None
+    all_step_labels = np.concatenate(step_labels) if step_labels else None
+    all_step_predictions = np.concatenate(step_predictions) if step_predictions else None
+
+    detection_accuracy = (
+        float(accuracy_score(all_step_labels, all_step_predictions))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
+    detection_precision = (
+        float(precision_score(all_step_labels, all_step_predictions, average="binary", pos_label=1))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
+    detection_recall = (
+        float(recall_score(all_step_labels, all_step_predictions, average="binary", pos_label=1))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
+    detection_f1 = (
+        float(f1_score(all_step_labels, all_step_predictions, average="binary", pos_label=1))
+        if all_step_labels is not None and all_step_predictions is not None
+        else None
+    )
 
     return {
         "total_reward": total_reward,
@@ -87,8 +136,12 @@ def evaluate_episode(env, agents, max_steps, detection_threshold, ablation_cfg=N
         "avg_trust": float(np.mean(trust_values)) if trust_values else 0.0,
         "avg_disconnect": float(np.mean(disconnect_values)) if disconnect_values else 0.0,
         "avg_detection": float(np.mean(detection_rates)) if detection_rates else None,
-        "step_features": np.vstack(step_features) if step_features else None,
-        "step_labels": np.concatenate(step_labels) if step_labels else None,
+        "avg_detection_accuracy": detection_accuracy,
+        "avg_detection_precision": detection_precision,
+        "avg_detection_recall": detection_recall,
+        "avg_detection_f1": detection_f1,
+        "step_features": all_step_features,
+        "step_labels": all_step_labels,
     }
 
 

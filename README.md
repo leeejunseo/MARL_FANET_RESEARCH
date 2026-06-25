@@ -146,13 +146,40 @@ python test.py
 python eval.py
 ```
 
-정량적 평가를 위해 다중 에피소드에 걸쳐 평균 보상, PDR, 지연, 평균 hop, 트러스트, 탐지율, 통신 단절 비율을 `logs/eval_metrics.csv`에 저장합니다.
+### 평가 결과 저장 및 분석
+
+```bash
+python eval.py
+```
+
+정량적 평가를 위해 다중 에피소드에 걸쳐 평균 보상, PDR, 지연, 평균 hop, 트러스트, **탐지 정확도, 정밀도, 재현율, F1** 을 `logs/eval_metrics.csv`에 저장합니다.
 또한 `logs/eval_node_features.npz`와 시나리오별 `logs/eval_node_features_{scenario}.npz` 파일을 생성해 ROC/AUC 분석 및 시각화에 사용합니다.
 
-- `eval.py`는 저장된 actor 체크포인트에서 입력 차원(`obs_dim`)을 자동 추론하여 기존 가중치와 현재 환경을 호환합니다.
-- `test.py`는 학습 모델을 로드해 Tacview 평가 로그를 생성하며, 평가 시 `logs/test_metrics.csv`도 만듭니다.
+| 평가 메트릭 | 설명 |
+|---|---|
+| `avg_reward` | 평균 누적 보상 |
+| `avg_pdr` | 평균 패킷 전달률 (%) |
+| `avg_delay` | 평균 전송 지연 (ms) |
+| `avg_hop` | 평균 경로 홉 수 |
+| `avg_trust` | 평균 노드 신뢰도 (0~1) |
+| `avg_detection_accuracy` | 악의적 노드 탐지 정확도 (%) |
+| `avg_detection_precision` | 탐지 정밀도 (%) |
+| `avg_detection_recall` | 탐지 재현율 (%) |
+| `avg_detection_f1` | 탐지 F1 점수 |
 
-### 2.1 구성 파일
+- `eval.py`는 저장된 actor 체크포인트에서 입력 차원(`obs_dim`)을 자동 추론하여 기존 가중치와 현재 환경을 호환합니다.
+- `test.py`는 학습 모델을 로드해 Tacview 평가 로그를 생성하며, 평가 시 동일 메트릭을 `logs/test_metrics.csv`에도 저장합니다.
+
+### 시각화 기능 현황
+
+| 기능 | 상태 | 설명 |
+|---|---|---|
+| 학습 수렴 곡선 | ✓ 완료 | 에피소드별 보상 수렴 추이 시각화 |
+| ROC/AUC 곡선 | ✓ 완료 | 악의적 노드 탐지 성능 평가 (시나리오별) |
+| 프로토콜 비교 바 차트 | ✓ 완료 | AODV/Standard MARL/EMARL-XAI 성능 비교 |
+| 탐지 성능 지표 (Precision/Recall/F1) | ✓ 완료 | `plot_detection_metrics.py`로 시각화 |
+| XAI 특성 기여도 | ✓ 완료 | Integrated Gradients 기반 히트맵, SHAP Plot |
+| 전체 자동 생성 | ✓ 완료 | `generate_all_plots.py`로 모든 그래프 일괄 생성 |
 
 모든 환경 및 학습/평가 설정은 `config.yaml`에서 관리합니다.
 - `environment`: 드론 수, 통신 반경 `R_c`, 악의적 노드 비율 등
@@ -464,27 +491,30 @@ pip install -r requirements.txt
 **저장소**: [https://github.com/leeejunseo/MARL_FANET_RESEARCH](https://github.com/leeejunseo/MARL_FANET_RESEARCH)
 ---
 
-## 현재 구현 상태
+## 구현 완료 사항 (✓)
 
-- `train.py`: MADDPG 학습 + `MaliciousNodeDetector` 기반 탐지 보상 셰이핑 적용
-- `eval.py`: 악의적 행동 시나리오별 평가 반복 및 `logs/eval_metrics.csv` 저장
-- `test.py`: 학습 모델 로드 평가, Tacview ACMI 생성, 평가 메트릭 CSV 저장
-- `config.yaml`: 평가 시나리오, 탐지 보상, ablation 설정, baseline 비교값 지원 (`use_xai`, `use_trust`, `use_marl`)
-- `utils/metrics_logger.py`: 평가 로그에 시나리오 항목 추가
-- `utils/plot_roc_auc.py`: 평가 기반 ROC/AUC 로딩, 시나리오별 ROC 시각화 지원
-- `utils/plot_bar_comparison.py`: 실제 평가 메트릭을 기반으로 EMARL-XAI 성능 반영, baseline AODV/Standard MARL 비교 지원
-- `analysis/xai_explainer.py`: Integrated Gradients 기반 XAI 분석 모듈
-- `ns3_wrapper/fanet_env.py`: FANET 환경에 블랙홀/Selective Forwarding/Sybil 악의적 행동 모델 추가
-- `run_all.py`: 학습 → 평가 → 시각화 전체 파이프라인 자동 실행
-- `run_all.bat`: Windows용 전체 파이프라인 실행 스크립트
-- `Makefile`: Unix/Windows용 단일 명령 실행 규칙 제공
+| 모듈 | 구현 내용 |
+|---|---|
+| `train.py` | ✓ MADDPG 학습 + `MaliciousNodeDetector` 기반 탐지 보상 셰이핑 |
+| `eval.py` | ✓ 악의적 행동 시나리오별 평가 반복 및 `logs/eval_metrics.csv` 저장 |
+| `test.py` | ✓ 학습 모델 로드 평가, Tacview ACMI 생성, 평가 메트릭 CSV 저장 |
+| `config.yaml` | ✓ 평가 시나리오, 탐지 보상, ablation 설정, baseline 비교값 지원 (`use_xai`, `use_trust`, `use_marl`) |
+| `utils/metrics_logger.py` | ✓ 평가 로그에 시나리오 항목 추가, Precision/Recall/F1 필드 지원 |
+| `utils/plot_roc_auc.py` | ✓ 평가 기반 ROC/AUC 로딩, 시나리오별 ROC 시각화 |
+| `utils/plot_bar_comparison.py` | ✓ 실제 평가 메트릭 기반 EMARL-XAI 성능 반영, AODV/Standard MARL 비교 |
+| `utils/plot_detection_metrics.py` | ✓ Precision/Recall/F1 탐지 성능 지표 시각화 |
+| `analysis/xai_explainer.py` | ✓ Integrated Gradients 기반 XAI 분석 모듈 |
+| `ns3_wrapper/fanet_env.py` | ✓ FANET 환경 + 블랙홀/Selective Forwarding/Sybil 악의적 행동 모델 |
+| `analysis/malicious_detector.py` | ✓ SNR·Trust Score·Hop Count 기반 이상 점수 및 탐지 로직 |
+| `run_all.py` | ✓ 학습 → 평가 → 시각화 전체 파이프라인 자동 실행 |
+| `run_all.bat` | ✓ Windows용 전체 파이프라인 실행 스크립트 |
+| `Makefile` | ✓ Unix/macOS/Windows용 단일 명령 실행 규칙 제공 |
 
-## 아직 해야 할 작업
+## 향후 개선 사항 (선택)
 
-- `ns3_wrapper/fanet_env.py`에서 실제 NS-3 연동 구현
-  - 현재는 Python 내부 시뮬레이션만 사용
-  - NS-3 gRPC/ZMQ 또는 WSL2 기반 연동을 통해 실제 무선 채널/패킷 전달을 반영해야 함
-- `utils/plot_xai_heatmap.py`에서 실제 Actor 모델 기반 XAI 분석 우선 사용
-  - 현재 모델 로드 실패 시 surrogate fallback 사용
-- `test.py`의 평가 로그 및 시나리오별 메트릭 저장 확대
-- `agents/maddpg.py`의 탐지 보상 정보가 Critic 학습/정책 업데이트에 더 깊게 반영되도록 개선
+| 항목 | 설명 | 우선순위 |
+|---|---|---|
+| **실제 NS-3 연동** | Python 내부 시뮬레이션 → 실제 무선 채널/패킷 전달 반영 (gRPC/ZMQ/WSL2) | 낮음 |
+| **XAI 분석 강화** | Actor 모델 기반 XAI 분석 안정성 개선, fallback 로직 최적화 | 중간 |
+| **시나리오 확대** | 추가 악의적 행동 패턴 (Byzantine, Flooding 등) 시뮬레이션 | 낮음 |
+| **통신 모델 고도화** | Path Loss/Shadowing 등 실제 RF 환경 모델 추가 | 낮음 |

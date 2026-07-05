@@ -19,6 +19,24 @@ def main():
         ("학습", ["train.py"]),
         ("평가", ["eval.py"]),
         ("시각화", ["utils/generate_all_plots.py"]),
+        (
+            "2D 데모 생성",
+            [
+                "visualize_attack.py",
+                "--policy",
+                "trained",
+                "--demo-60",
+                "--demo-seconds",
+                "60",
+                "--fps",
+                "3",
+                "--output",
+                "logs/demo_60s.gif",
+                "--event-log",
+                "logs/demo_60s_link_events.csv",
+                "--no-show",
+            ],
+        ),
     ]
 
     for name, args in steps:

@@ -9,6 +9,7 @@ from analysis.malicious_detector import MaliciousNodeDetector
 from utils.config import load_config
 from utils.metrics_logger import EvalMetricsLogger
 from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
+from ns3_wrapper.provider_factory import build_link_provider
 
 
 def apply_ablation_obs(obs, ablation_cfg):
@@ -171,6 +172,7 @@ def main():
 
     for scenario in scenarios:
         print(f"\n--- 시나리오: {scenario['name']} ({scenario['malicious_behavior']}) ---")
+        link_provider = build_link_provider(config, env_cfg["num_drones"])
         env = AdvancedFANETEnv(
             num_drones=env_cfg["num_drones"],
             R_c=env_cfg["R_c"],
@@ -181,6 +183,37 @@ def main():
             malicious_drop_rate=scenario.get("malicious_drop_rate", 0.4),
             malicious_behavior=scenario.get("malicious_behavior", env_cfg.get("malicious_behavior", "drop_and_trust")),
             trust_noise=scenario.get("trust_noise", env_cfg.get("trust_noise", 0.05)),
+            velocity_damping=env_cfg.get("velocity_damping", 0.05),
+            center_pull_coeff=env_cfg.get("center_pull_coeff", 0.12),
+            center_reward_coeff=env_cfg.get("center_reward_coeff", 0.6),
+            reward_cov_coeff=env_cfg.get("reward_cov_coeff", 0.6),
+            reward_col_coeff=env_cfg.get("reward_col_coeff", 2.5),
+            reward_conn_coeff=env_cfg.get("reward_conn_coeff", 4.0),
+            reward_trust_pos_coeff=env_cfg.get("reward_trust_pos_coeff", 1.2),
+            reward_trust_neg_coeff=env_cfg.get("reward_trust_neg_coeff", 0.8),
+            trust_update_rate=env_cfg.get("trust_update_rate", 0.2),
+            trust_w_fr=env_cfg.get("trust_w_fr", 0.5),
+            trust_w_cr=env_cfg.get("trust_w_cr", 0.3),
+            trust_w_dr=env_cfg.get("trust_w_dr", 0.2),
+            trust_threshold=env_cfg.get("trust_threshold", 0.35),
+            interference_k=env_cfg.get("interference_k", 1.2),
+            interference_base=env_cfg.get("interference_base", 0.1),
+            interference_distance_coeff=env_cfg.get("interference_distance_coeff", 0.9),
+            interference_malicious_boost=env_cfg.get("interference_malicious_boost", 0.6),
+            energy_init=env_cfg.get("energy_init", 100.0),
+            energy_move_coeff=env_cfg.get("energy_move_coeff", 0.08),
+            energy_tx_coeff=env_cfg.get("energy_tx_coeff", 0.25),
+            reward_alpha=env_cfg.get("reward_alpha", 1.2),
+            reward_beta=env_cfg.get("reward_beta", 1.0),
+            reward_gamma=env_cfg.get("reward_gamma", 0.8),
+            reward_delta=env_cfg.get("reward_delta", 1.0),
+            reward_w_pdr=env_cfg.get("reward_w_pdr", 1.0),
+            reward_w_trust=env_cfg.get("reward_w_trust", 1.0),
+            reward_w_delay=env_cfg.get("reward_w_delay", 1.0),
+            reward_w_energy=env_cfg.get("reward_w_energy", 0.8),
+            reward_w_security=env_cfg.get("reward_w_security", 1.2),
+            alert_decay=env_cfg.get("alert_decay", 0.9),
+            link_provider=link_provider,
         )
         agents = load_agents(env, config)
 

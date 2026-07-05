@@ -5,9 +5,9 @@ from ns3_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
 from analysis.malicious_detector import MaliciousNodeDetector
 from utils.replay_buffer import ReplayBuffer
-from utils.tacview_logger import TacviewLogger
 from utils.metrics_logger import MetricsLogger
 from utils.config import load_config
+from ns3_wrapper.provider_factory import build_link_provider
 
 
 def apply_ablation_obs(obs, ablation_cfg):
@@ -28,10 +28,11 @@ def main():
     training_cfg = config["training"]
 
     print("========================================================")
-    print("  MARL-FANET 심층 학습 및 Tacview 시각화 연동 시스템")
+    print("  MARL-FANET 심층 학습 시스템")
     print("========================================================")
     
     num_drones = env_cfg["num_drones"]
+    link_provider = build_link_provider(config, num_drones)
     env = AdvancedFANETEnv(
         num_drones=num_drones,
         R_c=env_cfg["R_c"],
@@ -41,6 +42,37 @@ def main():
         malicious_ratio=env_cfg.get("malicious_ratio", 0.0),
         malicious_drop_rate=env_cfg.get("malicious_drop_rate", 0.4),
         trust_noise=env_cfg.get("trust_noise", 0.05),
+        velocity_damping=env_cfg.get("velocity_damping", 0.05),
+        center_pull_coeff=env_cfg.get("center_pull_coeff", 0.12),
+        center_reward_coeff=env_cfg.get("center_reward_coeff", 0.6),
+        reward_cov_coeff=env_cfg.get("reward_cov_coeff", 0.6),
+        reward_col_coeff=env_cfg.get("reward_col_coeff", 2.5),
+        reward_conn_coeff=env_cfg.get("reward_conn_coeff", 4.0),
+        reward_trust_pos_coeff=env_cfg.get("reward_trust_pos_coeff", 1.2),
+        reward_trust_neg_coeff=env_cfg.get("reward_trust_neg_coeff", 0.8),
+        trust_update_rate=env_cfg.get("trust_update_rate", 0.2),
+        trust_w_fr=env_cfg.get("trust_w_fr", 0.5),
+        trust_w_cr=env_cfg.get("trust_w_cr", 0.3),
+        trust_w_dr=env_cfg.get("trust_w_dr", 0.2),
+        trust_threshold=env_cfg.get("trust_threshold", 0.35),
+        interference_k=env_cfg.get("interference_k", 1.2),
+        interference_base=env_cfg.get("interference_base", 0.1),
+        interference_distance_coeff=env_cfg.get("interference_distance_coeff", 0.9),
+        interference_malicious_boost=env_cfg.get("interference_malicious_boost", 0.6),
+        energy_init=env_cfg.get("energy_init", 100.0),
+        energy_move_coeff=env_cfg.get("energy_move_coeff", 0.08),
+        energy_tx_coeff=env_cfg.get("energy_tx_coeff", 0.25),
+        reward_alpha=env_cfg.get("reward_alpha", 1.2),
+        reward_beta=env_cfg.get("reward_beta", 1.0),
+        reward_gamma=env_cfg.get("reward_gamma", 0.8),
+        reward_delta=env_cfg.get("reward_delta", 1.0),
+        reward_w_pdr=env_cfg.get("reward_w_pdr", 1.0),
+        reward_w_trust=env_cfg.get("reward_w_trust", 1.0),
+        reward_w_delay=env_cfg.get("reward_w_delay", 1.0),
+        reward_w_energy=env_cfg.get("reward_w_energy", 0.8),
+        reward_w_security=env_cfg.get("reward_w_security", 1.2),
+        alert_decay=env_cfg.get("alert_decay", 0.9),
+        link_provider=link_provider,
     )
     lr = training_cfg["lr"]
     gamma = training_cfg["gamma"]
@@ -82,12 +114,6 @@ def main():
         disconnect_values = []
         detection_rates = []
 
-        # 마지막 에피소드에서만 Tacview 로그를 기록하여 최종 전술 확인
-        record_tacview = (episode == max_episodes)
-        if record_tacview:
-            tacview = TacviewLogger(f"logs/swarm_final_ep{episode}.acmi")
-            print("\n[알림] 최종 에피소드 전술 기동 Tacview 로그 기록 중...")
-            
         for step in range(max_steps):
             global_step += 1
             
@@ -98,7 +124,7 @@ def main():
                 if global_step < warmup_steps:
                     action = np.random.uniform(-1.0, 1.0, size=env.action_dim)
                 else:
-                    explore = not record_tacview
+                    explore = True
                     action = agents[i].act(obs_for_action[i], explore=explore)
                 actions.append(action)
             actions = np.array(actions)
@@ -127,9 +153,6 @@ def main():
                 info["detection_shaping"] = shaped_rewards.tolist()
 
             replay_buffer.add(obs_for_action, state, actions, rewards, apply_ablation_obs(next_obs, ablation_cfg), next_state, terminated)
-
-            if record_tacview:
-                tacview.log_step(time_step=float(step), positions=env.positions)
 
             obs = next_obs
             state = next_state
@@ -179,7 +202,7 @@ def main():
             print(f"  -> [저장 완료] 에피소드 {episode} 신경망 가중치 저장됨 ({model_dir}/)")
 
     print("\n========================================================")
-    print("  [연구 완료] 모델 저장 및 Tacview ACMI 로그 추출 완료")
+    print("  [연구 완료] 모델 저장 및 학습 로그 생성 완료")
     print("========================================================")
 
 if __name__ == "__main__":

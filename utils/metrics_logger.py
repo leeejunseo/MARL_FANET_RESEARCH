@@ -67,15 +67,16 @@ class MetricsLogger:
 
 
 class EvalMetricsLogger:
-    def __init__(self, filepath="logs/eval_metrics.csv"):
+    def __init__(self, filepath="logs/eval_metrics.csv", overwrite=False):
         self.filepath = filepath
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        if not os.path.exists(filepath):
+        if overwrite or not os.path.exists(filepath):
             with open(filepath, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow([
                     "episode",
                     "scenario",
+                    "policy",
                     "total_reward",
                     "avg_pdr",
                     "avg_delay_ms",
@@ -89,12 +90,13 @@ class EvalMetricsLogger:
                     "avg_detection_f1",
                 ])
 
-    def log_episode(self, episode, stats, scenario="Default"):
+    def log_episode(self, episode, stats, scenario="Default", policy="EMARL-XAI"):
         with open(self.filepath, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([
                 episode,
                 scenario,
+                policy,
                 f"{stats['total_reward']:.4f}",
                 f"{stats['avg_pdr']:.4f}",
                 f"{stats['avg_delay_ms']:.4f}",

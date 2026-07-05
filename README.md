@@ -1,520 +1,279 @@
-# MARL-FANET 전술 스웜 프레임워크
+﻿# MARL-FANET 전술 스웜 프레임워크
 
-**다중 에이전트 강화학습(MADDPG)** 기반 **FANET(Flying Ad-hoc Network) 드론 스웜** 전술 기동 시뮬레이션 및 Tacview 3D 시각화 연동 연구 프로젝트입니다.
+다중 에이전트 강화학습(MADDPG) 기반 FANET(Flying Ad-hoc Network) 드론 스웜 연구 프로젝트입니다.
 
-공군사관학교 소프트웨어응용(26-1학기) 연구 과제로, Dec-POMDP 환경에서 UAV 스웜이 **탐지 영역 확장**, **충돌 회피**, **통신망 유지** 세 가지 목표를 동시에 최적화하도록 학습합니다. 제안 모델 **EMARL-XAI**는 MADDPG 기반 다중 에이전트 강화학습에 **악의적 노드 탐지** 및 **설명 가능 AI(XAI)** 모듈을 결합하여, FANET 환경에서의 전술적 라우팅과 보안성을 동시에 확보합니다.
+이 저장소는 다음 목표를 중심으로 설계되었습니다.
+- 스웜 기동 중 통신 연결 유지
+- 악의적 노드(blackhole, selective forwarding, sybil) 대응
+- 탐지 성능 및 XAI 기반 해석 가능성 분석
+- 2D 통신/공격 애니메이션 시각화
+- 군집 중심 드리프트 억제(속도 감쇠 + 중앙 유지 항)
 
----
+## 현재 기본 설정
 
-## 연구 배경
+- 드론 수: 10
+- 악성 비율: 0.33
+- 기본 악성 드론 수: 약 3대
+- 기본 시나리오: Default, Blackhole, Selective Forwarding, Sybil
+- 기본 평가 모델 에피소드: 1000
 
-FANET(Flying Ad-hoc Network)은 드론 간 동적 무선 통신망으로, 군사 정찰·스웜 작전에 활용됩니다. 그러나 다음과 같은 문제가 존재합니다.
-
-| 문제 | 설명 |
-|---|---|
-| **통신 단절** | 드론 이동으로 인한 링크 불안정, PDR(패킷 전달률) 저하 |
-| **악의적 노드** | Blackhole·Selective Forwarding 등 내부 공격 |
-| **설명 불가 AI** | 강화학습 기반 라우팅의 의사결정 근거 부재 |
-
-본 프로젝트는 MADDPG로 스웜 전술을 학습하고, Trust Score·SNR 기반 악의적 노드 탐지와 XAI 분석을 통해 **성능·보안·해석 가능성**을 함께 검증합니다.
-
----
-
-## 주요 특징
-
-- **MADDPG (Multi-Agent Deep Deterministic Policy Gradient)**
-  - Centralized Training, Decentralized Execution (CTDE) 구조
-  - Actor-Critic 네트워크 + Target Network Soft Update
-- **FANET 전술 환경** (`AdvancedFANETEnv`)
-  - 3기 드론 스웜, 3D 공간 물리 시뮬레이션
-  - 다중 목적 보상 함수 (커버리지 / 충돌 회피 / 통신 유지)
-- **악의적 노드 탐지** (`analysis/malicious_detector.py`)
-  - SNR, Trust Score, Hop Count, Packet Drop Rate, Latency 기반 이상 점수 산출
-  - ROC/AUC로 AODV·Standard MARL·EMARL-XAI 탐지 성능 비교
-  - 평가 데이터 기반 시나리오별 ROC 시각화 지원
-- **XAI 설명 모듈** (`analysis/xai_explainer.py`)
-  - Integrated Gradients 기반 특성 기여도 분석
-  - 히트맵, SHAP Summary Plot, 특성 중요도 바 차트 생성
-- **Tacview ACMI 로그** 연동
-  - 학습·평가 결과를 3D 전술 뷰어에서 재생 가능
-  - 통신 단절 시 드론 색상 Yellow 경고 표시
-- **논문용 시각화** (300 DPI)
-  - 학습 수렴 곡선, ROC/AUC, 프로토콜 비교 바 차트, XAI 그래프
-
----
+주의:
+- 기존 3드론 체크포인트는 10드론 설정과 바로 호환되지 않으므로 재학습이 필요합니다.
 
 ## 프로젝트 구조
 
-```
+```text
 marl_fanet_research/
-├── train.py                    # MADDPG 심층 학습 메인 스크립트
-├── test.py                     # 학습된 모델 로드 및 전술 평가
+├── train.py
+├── test.py
+├── eval.py
+├── visualize_attack.py
+├── config.yaml
 ├── agents/
-│   └── maddpg.py               # Actor/Critic 네트워크 및 MADDPG 에이전트
+│   └── maddpg.py
 ├── ns3_wrapper/
-│   └── fanet_env.py            # FANET 전술 시뮬레이션 환경 (Gymnasium)
+│   └── fanet_env.py
 ├── analysis/
-│   ├── malicious_detector.py   # 악의적 노드 탐지 (ROC/AUC 평가)
-│   └── xai_explainer.py        # XAI 특성 기여도 분석
+│   ├── malicious_detector.py
+│   └── xai_explainer.py
 ├── utils/
-│   ├── replay_buffer.py        # 다중 에이전트 경험 재생 버퍼
-│   ├── tacview_logger.py       # Tacview ACMI 파일 로거
-│   ├── metrics_logger.py       # 학습 보상 CSV 로깅
-│   ├── plot_style.py           # 논문용 matplotlib 공통 스타일
-│   ├── plot_learning_curve.py  # 학습 수렴 곡선
-│   ├── plot_roc_auc.py         # ROC Curve & AUC
-│   ├── plot_bar_comparison.py  # 프로토콜 성능 바 차트
-│   ├── plot_xai_heatmap.py     # XAI 히트맵 / SHAP Summary
-│   └── generate_all_plots.py   # 전체 시각화 일괄 생성
-├── Makefile                   # 전체 파이프라인 자동화
-├── run_all.py                 # 학습 → 평가 → 시각화 자동 실행
-├── run_all.bat               # Windows용 전체 실행 스크립트
-├── requirements.txt
-├── models/weights/             # 학습된 신경망 가중치 (.pth)
-└── logs/                         # Tacview ACMI, CSV, 그래프 출력
+│   ├── replay_buffer.py
+│   ├── metrics_logger.py
+│   ├── plot_learning_curve.py
+│   ├── plot_roc_auc.py
+│   ├── plot_bar_comparison.py
+│   ├── plot_detection_metrics.py
+│   ├── plot_xai_heatmap.py
+│   └── generate_all_plots.py
+└── logs/
 ```
 
----
-
-## 빠른 시작
+## 빠른 실행
 
 ```bash
-git clone https://github.com/leeejunseo/MARL_FANET_RESEARCH.git
-cd MARL_FANET_RESEARCH
-
 pip install -r requirements.txt
 
-# 1. 학습 (1000 에피소드, 약 10~30분)
+# 1) 학습
 python train.py
 
-# 2. 학습된 모델 평가 + Tacview 로그
+# 2) 학습 모델 평가 (지표 CSV 저장)
 python test.py
 
-# 3. 다중 에피소드 평가 및 탐지 메트릭 생성
+# 2-1) multi-seed 평균 + bridge OFF/ON 동시 비교
+python test.py --compare-bridge --seeds 42,43,44,45,46
+
+# 3) 시나리오별 정량 평가 + ROC 데이터 저장
 python eval.py
 
-# 4. 논문용 그래프 일괄 생성
+# 4) 논문용 그래프 일괄 생성
 python utils/generate_all_plots.py
+```
 
-# 5. 전체 파이프라인 실행 (학습 → 평가 → 시각화)
+## 2D 통신 공격 시각화
+
+Matplotlib 애니메이션으로 다음을 시각화합니다.
+- 링크 연결/단절
+- 공격 경유 링크
+- 고립 노드
+- PDR/지연/단절 비율
+- 공격 감지 confidence 시간축
+
+```bash
+# 학습 정책
+python visualize_attack.py --policy trained --scenario Default
+
+# 공격 시나리오 + GIF 저장
+python visualize_attack.py --policy trained --scenario Blackhole --output logs/attack_blackhole.gif
+
+# 무작위 정책 비교
+python visualize_attack.py --policy random --scenario Default
+
+# 링크 이벤트 CSV 저장
+python visualize_attack.py --policy trained --scenario Blackhole --event-log logs/link_events_blackhole.csv
+
+# 60초 자동 재생 데모 (시나리오 자동 순환)
+python visualize_attack.py --policy trained --demo-60 --demo-seconds 60 --fps 3 --output logs/demo_60s.gif --event-log logs/demo_60s_link_events.csv --no-show
+```
+
+표현 규칙:
+- 파란 노드: 정상
+- 빨간 노드: 악의적 노드
+- 노란 노드: 고립 노드
+- 초록 링크: 정상 링크
+- 주황 링크: 공격 경유 링크
+- 빨간 점선: 직전 프레임 대비 단절 링크
+
+링크 이벤트 CSV 컬럼:
+- step
+- scenario
+- node_i
+- node_j
+- event_type (disconnect/reconnect)
+- reason (distance_exceeded_rc, recovered_within_rc, malicious_path 포함)
+
+## 핵심 지표
+
+- avg_pdr
+- avg_delay_ms
+- avg_hop
+- avg_trust
+- avg_disconnect
+- avg_detection_accuracy
+- avg_detection_precision
+- avg_detection_recall
+- avg_detection_f1
+
+평가 결과 파일:
+- logs/test_metrics.csv
+- logs/eval_metrics.csv
+- logs/eval_node_features.npz
+- logs/eval_node_features_{scenario}.npz
+
+## 시나리오
+
+config.yaml의 evaluation.scenarios에서 설정합니다.
+- Default
+- Blackhole
+- Selective Forwarding
+- Sybil
+
+## 드리프트 억제 파라미터
+
+config.yaml의 environment에서 설정합니다.
+- velocity_damping: 속도 감쇠율
+- center_pull_coeff: 중심 복귀 항의 강도
+- center_reward_coeff: 중심 이탈 패널티 계수
+
+## 논문 수식 반영 항목
+
+현재 환경은 논문 정식화의 다음 요소를 반영합니다.
+
+- Dec-POMDP 관측 확장: o_i에 에너지(E_i), 경보 이력(H_i), 통신 지연(C_i 일부)을 추가
+- 동적 신뢰도 업데이트:
+	- T_ij(t+1) = (1-lambda)T_ij(t) + lambda*Psi_ij
+	- Psi_ij = w_fr*FR_ij + w_cr*CR_ij + w_dr*DR_ij
+	- T_ij < trust_threshold 이면 해당 링크를 격리(보안 리스크 가산)
+- 보상 함수 확장:
+	- 기본형(alpha*PDR - beta*Delay - gamma*FPR + delta*Trust)
+	- 세분형(w_pdr, w_trust, w_delay, w_energy, w_security) 동시 반영
+- 물리 통신 성공 확률:
+	- P_succ = exp(-k * Interference)
+	- 간섭은 거리 기반 항 + 악성 경로 부스트로 계산
+
+설정 위치: config.yaml의 environment 섹션
+- trust_update_rate, trust_w_fr, trust_w_cr, trust_w_dr, trust_threshold
+- interference_k, interference_base, interference_distance_coeff, interference_malicious_boost
+- energy_init, energy_move_coeff, energy_tx_coeff
+- reward_alpha, reward_beta, reward_gamma, reward_delta
+- reward_w_pdr, reward_w_trust, reward_w_delay, reward_w_energy, reward_w_security
+- alert_decay
+
+## 옵션: ns-3 링크 트레이스 브리지 실험
+
+기본값은 비활성화이며, 켜면 환경 내부 거리 모델 대신 CSV 링크 트레이스를 사용합니다.
+
+1) 테스트용 트레이스 생성
+
+```bash
+python utils/generate_mock_ns3_trace.py --output logs/ns3_link_trace.csv --num-drones 10 --steps 60
+```
+
+2) config.yaml에서 브리지 활성화
+
+```yaml
+ns3_bridge:
+	enabled: true
+	provider: csv_trace
+	csv_trace_path: logs/ns3_link_trace.csv
+	strict: false
+```
+
+3) 기존 실행 그대로 사용
+
+```bash
+python test.py
+```
+
+CSV 컬럼 스키마:
+- step: 1부터 시작하는 시뮬레이션 step
+- i, j: 노드 인덱스
+- connected: 0/1
+- delay_ms: 링크 지연(ms)
+- delivery: 링크 전달률(0~1)
+- hop: 홉 수 (미연결은 큰 값 권장)
+
+### ns-3 이벤트 로그를 브리지 CSV로 변환
+
+ns-3에서 패킷 이벤트 CSV를 뽑았다면 아래 스크립트로 바로 변환할 수 있습니다.
+
+입력 CSV 권장 컬럼(별칭 지원):
+- time_s (또는 time/timestamp)
+- src, dst
+- event: tx/rx/drop
+- delay_ms (선택)
+- hop (선택)
+
+변환 실행:
+
+```bash
+python utils/convert_ns3_events_to_bridge_csv.py --input logs/ns3_events.csv --output logs/ns3_link_trace.csv --num-drones 10 --step-seconds 1.0
+```
+
+변환 후 config.yaml:
+
+```yaml
+ns3_bridge:
+	enabled: true
+	provider: csv_trace
+	csv_trace_path: logs/ns3_link_trace.csv
+	strict: false
+```
+
+### 원클릭 실행 (권장)
+
+이벤트 CSV가 이미 있으면 한 번에 변환 + 테스트 + GIF 생성까지 실행할 수 있습니다.
+
+```bash
+python run_ns3_bridge_pipeline.py --events logs/ns3_events.csv --trace logs/ns3_link_trace.csv --num-drones 10 --step-seconds 1.0 --seeds 42,43,44,45,46 --policy trained --scenario Default --gif logs/ns3_bridge_view.gif
+```
+
+Windows 배치 파일:
+
+```bash
+run_ns3_bridge_pipeline.bat logs\ns3_events.csv
+```
+
+### ns-3 다운로드가 필요한가?
+
+- 현재 저장소에는 이미 ns-3 소스 트리(ns-3-dev)가 포함되어 있습니다.
+- 브리지 모드만 사용할 경우, ns-3를 실시간으로 빌드/실행할 필요는 없고 이벤트 CSV만 있으면 됩니다.
+- ns-3 예제를 직접 새로 돌리고 싶을 때만 ns-3 빌드 환경(CMake, 컴파일러 등) 준비가 필요합니다.
+
+## 추천 다음 단계
+
+- 10드론 기준으로 `train.py` 재실행
+- `test.py`로 multi-seed 재평가
+- `visualize_attack.py`로 2D 시각화 GIF 생성
+
+## 요구사항
+
+- Python 3.9+
+- torch>=2.0
+- numpy>=1.24
+- gymnasium>=0.29
+- matplotlib>=3.7
+- PyYAML>=6.0
+
+## 실행 파이프라인
+
+```bash
 python run_all.py
-
-# 6. Windows 배치 실행
+# 또는
 run_all.bat
-
-# 7. Makefile 실행 (Windows용 make 또는 Linux/macOS)
+# 또는
 make run
 ```
 
----
-
-## 사용 방법
-
-### 1. 학습 실행
-
-```bash
-python train.py
-```
-
-| 하이퍼파라미터 | 값 | 설명 |
-|---|---|---|
-| `num_drones` | 3 | 스웜 드론 수 |
-| `max_episodes` | 1000 | 총 학습 에피소드 |
-| `max_steps` | 60 | 에피소드당 최대 스텝 |
-| `batch_size` | 128 | 미니배치 크기 |
-| `warmup_steps` | 500 | 초기 무작위 탐색 스텝 |
-| `save_interval` | 200 | 모델 저장 주기 (에피소드) |
-
-**학습 출력물**
-
-| 경로 | 설명 |
-|---|---|
-| `models/weights/actor_agent_*_ep_*.pth` | 200~1000 에피소드 Actor 가중치 |
-| `models/weights/critic_agent_*_ep_*.pth` | Critic 가중치 |
-| `logs/training_rewards.csv` | 에피소드별 누적 보상 기록 |
-| `logs/swarm_final_ep1000.acmi` | 최종 에피소드 Tacview 로그 |
-
-### 2. 학습된 모델 평가
-
-```bash
-python test.py
-```
-
-1000 에피소드 모델을 로드하여 탐색 노이즈 없이 전술 기동을 평가하고, `logs/swarm_test_eval.acmi` 파일을 생성합니다.
-
-```bash
-python eval.py
-```
-
-### 평가 결과 저장 및 분석
-
-```bash
-python eval.py
-```
-
-정량적 평가를 위해 다중 에피소드에 걸쳐 평균 보상, PDR, 지연, 평균 hop, 트러스트, **탐지 정확도, 정밀도, 재현율, F1** 을 `logs/eval_metrics.csv`에 저장합니다.
-또한 `logs/eval_node_features.npz`와 시나리오별 `logs/eval_node_features_{scenario}.npz` 파일을 생성해 ROC/AUC 분석 및 시각화에 사용합니다.
-
-| 평가 메트릭 | 설명 |
-|---|---|
-| `avg_reward` | 평균 누적 보상 |
-| `avg_pdr` | 평균 패킷 전달률 (%) |
-| `avg_delay` | 평균 전송 지연 (ms) |
-| `avg_hop` | 평균 경로 홉 수 |
-| `avg_trust` | 평균 노드 신뢰도 (0~1) |
-| `avg_detection_accuracy` | 악의적 노드 탐지 정확도 (%) |
-| `avg_detection_precision` | 탐지 정밀도 (%) |
-| `avg_detection_recall` | 탐지 재현율 (%) |
-| `avg_detection_f1` | 탐지 F1 점수 |
-
-- `eval.py`는 저장된 actor 체크포인트에서 입력 차원(`obs_dim`)을 자동 추론하여 기존 가중치와 현재 환경을 호환합니다.
-- `test.py`는 학습 모델을 로드해 Tacview 평가 로그를 생성하며, 평가 시 동일 메트릭을 `logs/test_metrics.csv`에도 저장합니다.
-
-### 시각화 기능 현황
-
-| 기능 | 상태 | 설명 |
-|---|---|---|
-| 학습 수렴 곡선 | ✓ 완료 | 에피소드별 보상 수렴 추이 시각화 |
-| ROC/AUC 곡선 | ✓ 완료 | 악의적 노드 탐지 성능 평가 (시나리오별) |
-| 프로토콜 비교 바 차트 | ✓ 완료 | AODV/Standard MARL/EMARL-XAI 성능 비교 |
-| 탐지 성능 지표 (Precision/Recall/F1) | ✓ 완료 | `plot_detection_metrics.py`로 시각화 |
-| XAI 특성 기여도 | ✓ 완료 | Integrated Gradients 기반 히트맵, SHAP Plot |
-| 전체 자동 생성 | ✓ 완료 | `generate_all_plots.py`로 모든 그래프 일괄 생성 |
-
-모든 환경 및 학습/평가 설정은 `config.yaml`에서 관리합니다.
-- `environment`: 드론 수, 통신 반경 `R_c`, 악의적 노드 비율 등
-- `training`: 에피소드 수, 배치 크기, 학습률, 업데이트 계수
-- `evaluation`: 평가 에피소드 수, 모델 로드 경로, 결과 CSV/ROC 데이터 경로
-
-### 3. 논문용 시각화
-
-```bash
-# 전체 그래프 일괄 생성
-python utils/generate_all_plots.py
-
-# 개별 실행
-python utils/plot_learning_curve.py   # 학습 수렴 곡선
-python utils/plot_roc_auc.py          # ROC & AUC
-python utils/plot_bar_comparison.py   # 프로토콜 비교
-python utils/plot_detection_metrics.py # 탐지 성능 지표 비교
-python utils/plot_xai_heatmap.py      # XAI 분석
-```
-
-| 스크립트 | 출력 파일 | 용도 |
-|---|---|---|
-| `plot_learning_curve.py` | `logs/learning_curve_high_dpi.png` | 에피소드별 보상 수렴 확인 |
-| `plot_roc_auc.py` | `logs/roc_curve_auc.png` | 악의적 노드 탐지 성능 (TPR vs FPR) |
-| `plot_bar_comparison.py` | `logs/protocol_comparison_bar.png` | PDR·Delay·Accuracy 프로토콜 비교 |
-| `plot_detection_metrics.py` | `logs/detection_metrics.png` | Precision/Recall/F1 탐지 지표 비교 |
-| `plot_xai_heatmap.py` | `logs/xai_*.png` | XAI 특성 기여도 분석 |
-
-> `train.py` 실행 후 `logs/training_rewards.csv`가 있으면 수렴 곡선은 **실측 데이터**를 사용합니다. 없으면 학습 트렌드 기반 합성 데이터로 대체됩니다.
-
-### 4. Tacview 3D 재생
-
-[Tacview](https://www.tacview.net/)에서 ACMI 파일을 열어 드론 스웜 전술 기동을 3D로 확인합니다.
-
-| 파일 | 설명 |
-|---|---|
-| `logs/swarm_final_ep1000.acmi` | 학습 마지막 에피소드 기동 |
-| `logs/swarm_test_eval.acmi` | 평가 모드(노이즈 없음) 기동 |
-
-- **Red**: 통신 연결 유지
-- **Yellow**: FANET 통신 단절 (통신 반경 $R_c$ = 300m 이탈)
-
----
-
-## FANET 환경 상세
-
-### 물리 파라미터
-
-| 파라미터 | 값 | 설명 |
-|---|---|---|
-| `max_pos` | 1000 m | 시뮬레이션 공간 크기 |
-| `max_vel` | 20 m/s | 최대 속도 |
-| `R_c` | 300 m | FANET 통신 반경 |
-| `d_safe` | 30 m | 드론 간 최소 안전 거리 |
-
-### 관측 / 행동 공간
-
-- **관측 (obs_dim=9)**: 정규화된 위치(3) + 속도(3) + Trust Score + SNR + Hop Count — 에이전트별 부분 관측
-- **전역 상태 (state_dim=27)**: 모든 드론 관측을 연결한 전체 상태 — Critic 입력
-- **행동 (action_dim=3)**: 3축 가속도 명령 [-1, 1]
-
-### 보상 함수
-
-각 드론 $i$에 대해:
-
-$$R_i = 1.0 \cdot r_{cov} + 2.5 \cdot r_{col} + 3.0 \cdot r_{conn}$$
-
-| 항목 | 설명 |
-|---|---|
-| $r_{cov}$ | 다른 드론과의 거리 합 → 탐지 영역 확장 유도 |
-| $r_{col}$ | 안전 거리($d_{safe}$) 미만 진입 시 충돌 페널티 |
-| $r_{conn}$ | 통신 반경($R_c$) 이탈 시 연결 유지 페널티 |
-
----
-
-## MADDPG 알고리즘 개요
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  Centralized Critic                  │
-│  Q(s, a₁, a₂, a₃) ← 전역 상태 + 모든 에이전트 행동  │
-└─────────────────────────────────────────────────────┘
-         ↑                              ↑
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  Actor₀      │  │  Actor₁      │  │  Actor₂      │
-│  π(o₀)→a₀   │  │  π(o₁)→a₁   │  │  π(o₂)→a₂   │
-└──────────────┘  └──────────────┘  └──────────────┘
-   Decentralized Execution (각 드론 독립 행동)
-```
-
-- **Critic**: MSBE(Mean Squared Bellman Error) 손실로 Q-함수 학습
-- **Actor**: Policy Gradient로 Critic Q값 최대화
-- **Target Network**: Soft Update ($\tau = 0.01$)으로 학습 안정화
-- **탐색**: 가우시안 노이즈 ($\sigma = 0.1$) 추가
-
----
-
-## 논문용 시각화 가이드
-
-### 1. ROC Curve & AUC — 악의적 노드 탐지
-
-**용도**: 모델이 악의적 노드와 정상 노드를 얼마나 잘 구분하는지 평가합니다.
-
-| 축 | 의미 |
-|---|---|
-| X축 (FPR) | False Positive Rate — 정상 노드를 악의적이라 잘못 판단한 비율 |
-| Y축 (TPR) | True Positive Rate — 악의적 노드를 올바르게 탐지한 비율 |
-
-**해석**: 곡선이 좌상단에 가까울수록, AUC가 1에 가까울수록 탐지 성능이 우수합니다.
-
-| 모델 | AUC (예시) | 특징 |
-|---|---|---|
-| EMARL-XAI (제안) | ~0.94 | Trust Score 중심 가중치, XAI 기반 특성 선택 |
-| Standard MARL | ~0.84 | 균등 가중치, XAI 미적용 |
-| AODV (Baseline) | ~0.69 | Hop Count 중심, Trust Score 미반영 |
-
-![ROC Curve](logs/roc_curve_auc.png)
-
-**탐지 특성 변수**
-
-| 변수 | 설명 | 악의적 노드 경향 |
-|---|---|---|
-| SNR | 신호 대 잡음비 (dB) | 낮음 |
-| Trust Score | 노드 신뢰 점수 [0, 1] | 낮음 |
-| Hop Count | 라우팅 홉 수 | 높음 |
-| Packet Drop Rate | 패킷 드롭률 | 높음 |
-| Latency | 전송 지연 (ms) | 높음 |
-
----
-
-### 2. Convergence Plot — 학습 수렴
-
-**용도**: 에피소드 진행에 따라 보상(Reward)이 증가·수렴하는지 확인합니다.
-
-| 요소 | 설명 |
-|---|---|
-| Raw Episode Reward | 에피소드별 총 전술 보상 (연한 회색) |
-| Moving Average | Window=50 이동 평균선 (수렴 트렌드) |
-| Zero Baseline | 보상 0 기준선 |
-| Final Convergence | 최종 50 에피소드 평균 수렴값 |
-
-![학습 수렴 그래프](logs/learning_curve_high_dpi.png)
-
-1000 에피소드 학습 후 총 전술 보상은 약 **+100.26** 수준으로 수렴합니다.
-
----
-
-### 3. Bar Chart — 프로토콜 성능 비교
-
-**용도**: AODV, Standard MARL, EMARL-XAI 간 PDR·Delay·Detection Accuracy를 환경별로 비교합니다.
-
-| 시나리오 | 비교 지표 |
-|---|---|
-| Normal (정상) | PDR, Delay, Detection Accuracy |
-| Malicious Attack (악의적 공격) | 동일 지표, 공격 하 성능 저하 비교 |
-
-![프로토콜 비교](logs/protocol_comparison_bar.png)
-
-| 모델 | Normal PDR | Attack PDR | Attack Accuracy |
-|---|---|---|---|
-| AODV | 72.3% | 48.5% | 52.3% |
-| Standard MARL | 84.7% | 71.2% | 74.8% |
-| EMARL-XAI | 93.1% | 88.4% | 91.2% |
-
----
-
-### 4. XAI — 특성 기여도 분석
-
-**용도**: XAI 모듈의 핵심 결과물로, 어떤 변수가 드론의 라우팅 의사결정에 가장 큰 영향을 미치는지 보여줍니다.
-
-| 그래프 | 파일 | 설명 |
-|---|---|---|
-| 특성 상관 히트맵 | `logs/xai_feature_heatmap.png` | SNR·Trust·Hop 등 변수 간 상관관계 |
-| SHAP Summary Plot | `logs/xai_shap_summary.png` | 특성값(색)과 기여도(위치) beeswarm 분포 |
-| 특성 중요도 바 차트 | `logs/xai_feature_importance.png` | Integrated Gradients 평균 절대 기여도 순위 |
-
-![XAI Feature Importance](logs/xai_feature_importance.png)
-
-**분석 대상 특성**
-
-| 특성 | 설명 |
-|---|---|
-| SNR (dB) | 링크 신호 품질 |
-| Trust Score | 노드 신뢰도 (EMARL-XAI 핵심 변수) |
-
----
-
-## 1. 모델 평가 지표 및 데이터 분할
-
-- **목적**: 모델의 일반화 성능과 실제 적용 가능성을 검증합니다.
-- **데이터 분할**: 학습 `Train`, 하이퍼파라미터 검사 `Validation`, 최종 일반화 평가 `Test` 세 집합으로 분리합니다.
-- **Train**: 모델 학습에 사용.
-- **Validation**: 과적합 탐지, 정규화 및 하이퍼파라미터 튜닝에 사용.
-- **Test**: 최종 비교 평가를 위해 학습/튜닝에 전혀 사용하지 않습니다.
-
-## 2. 분류 모델 성능 지표
-
-- **정확도(Accuracy)**: 전체 예측 중 정답 비율.
-- **혼동 행렬(Confusion Matrix)**
-  - TP: 실제 양성 중 양성으로 예측한 수.
-  - TN: 실제 음성 중 음성으로 예측한 수.
-  - FP: 실제 음성 중 양성으로 잘못 예측한 수.
-  - FN: 실제 양성 중 음성으로 잘못 예측한 수.
-- **정밀도(Precision)**: 예측 양성 중 실제 양성 비율 = TP / (TP + FP).
-- **재현율(Recall)**: 실제 양성 중 올바르게 예측한 비율 = TP / (TP + FN).
-- **F1-score**: 정밀도와 재현율의 조화 평균 = 2 * (Precision * Recall) / (Precision + Recall).
-
-## 3. ROC 곡선 및 AUC
-
-- **ROC 곡선**: 임계값을 바꾸며 TPR(재현율)과 FPR(위양성률)을 나타낸 그래프.
-- **AUC**: ROC 아래 면적. 1에 가까울수록 구분 능력이 우수하며 0.5는 무작위 분류기와 동일.
-- **용도**: 클래스 불균형 상황에서도 모델의 판별 능력을 비교할 때 유용합니다.
-
-## 4. 현재 구현 상태 및 추가 작업
-
-### 현재 구현 상태
-- `eval.py`에서 평가 데이터의 평균 탐지 정확도(`avg_detection_accuracy`), 정밀도(`avg_detection_precision`), 재현율(`avg_detection_recall`), F1(`avg_detection_f1`)을 계산하도록 구현되었습니다.
-- `test.py`에서도 동일한 분류 지표를 계산하여 `logs/test_metrics.csv`에 기록합니다.
-- `utils/metrics_logger.py`의 `EvalMetricsLogger`가 해당 필드를 CSV 헤더와 로그 기록에 포함하도록 복구되었습니다.
-- 평가 데이터는 시나리오별 ROC/AUC 저장용 `.npz` 파일과 `logs/eval_metrics.csv`에 기록됩니다.
-
-### 추가로 하면 좋은 작업
-- `utils/generate_all_plots.py`에 `logs/eval_metrics.csv` 기반의 Precision/Recall/F1 비교 그래프를 추가하면 더욱 완성도 있는 평가 자료가 됩니다.
-- `plot_roc_auc.py`에 평균 탐지 정확도/정밀도/재현율/F1 수치를 같이 표시해주면 논문용 분석 자료가 더 명확해집니다.
-- `config.yaml`의 `baseline_metrics` 값을 실제 평가 결과와 자동 비교하는 시각화 또는 표 생성 기능을 추가할 수 있습니다.
-- `README`의 평가 결과 예시 표에 `Detection Accuracy` 외에 `Precision`, `Recall`, `F1`를 함께 포함하면 비교 문서가 더 완전해집니다.
-
-## 5. 과적합/과소적합 방지를 위한 정규화
-
-- **Ridge 정규화 (L2)**: 가중치 제곱합을 손실에 추가하여 큰 가중치를 억제합니다.
-- **Lasso 정규화 (L1)**: 가중치 절댓값 합을 추가하여 일부 특성의 가중치를 0으로 만들고 특성 선택 효과를 냅니다.
-- **효과**: 모델 복잡도를 낮추어 과적합을 줄이고, 충분히 단순하지 않으면 과소적합 위험을 줄입니다.
-
-## 5. K-fold 교차 검증
-
-- **K-fold CV**: 데이터를 K개 폴드로 나누고, 각 폴드를 한 번씩 검증 세트로 사용하여 평균 성능을 평가합니다.
-- **장점**: 학습/검증 데이터 분할에 따른 편향을 줄여 하이퍼파라미터 튜닝을 안정화합니다.
-- **사용 사례**: 정규화 강도, 학습률, 모델 구조 등 최적값을 찾을 때 유용합니다.
-
-## 6. 회귀 모델 성능 지표
-
-- **MSE (Mean Squared Error)**: 예측 오차의 제곱 평균.
-- **RMSE (Root Mean Squared Error)**: MSE의 제곱근으로, 오차 단위를 원래 값과 맞춤.
-- **MAE (Mean Absolute Error)**: 절대 오차의 평균.
-- **MAPE (Mean Absolute Percentage Error)**: 예측 오차의 백분율 평균.
-- **R² (결정계수)**: 모델이 실제 변동성을 얼마나 설명하는지 나타내며 1에 가까울수록 좋습니다.
-
----
-| Hop Count | 경로 홉 수 |
-| Packet Loss | 패킷 손실률 |
-| Node Degree | 이웃 노드 연결 수 |
-| Relative Velocity | 상대 이동 속도 |
-
----
-
-## 전체 연구 워크플로우
-
-```
-[1] train.py          → MADDPG 스웜 전술 학습
-         ↓
-[2] test.py           → 학습 모델 평가 + Tacview ACMI
-         ↓
-[3] generate_all_plots.py
-         ├── Convergence Plot    (학습 수렴)
-         ├── ROC/AUC             (악의적 노드 탐지)
-         ├── Bar Chart           (프로토콜 비교)
-         └── XAI Heatmap/SHAP    (의사결정 설명)
-         ↓
-[4] 논문 / 보고서 작성
-```
-
----
-
-## 출력 파일 목록
-
-| 경로 | 유형 | 생성 방법 |
-|---|---|---|
-| `models/weights/*.pth` | 모델 가중치 | `train.py` |
-| `logs/training_rewards.csv` | 학습 로그 | `train.py` |
-| `logs/swarm_final_ep1000.acmi` | Tacview 3D | `train.py` |
-| `logs/swarm_test_eval.acmi` | Tacview 3D | `test.py` |
-| `logs/learning_curve_high_dpi.png` | 수렴 그래프 | `plot_learning_curve.py` |
-| `logs/roc_curve_auc.png` | ROC/AUC | `plot_roc_auc.py` |
-| `logs/protocol_comparison_bar.png` | 바 차트 | `plot_bar_comparison.py` |
-| `logs/xai_feature_heatmap.png` | XAI 히트맵 | `plot_xai_heatmap.py` |
-| `logs/xai_shap_summary.png` | SHAP Plot | `plot_xai_heatmap.py` |
-| `logs/xai_feature_importance.png` | 중요도 차트 | `plot_xai_heatmap.py` |
-
----
-
-## 요구 사항
-
-- Python 3.9+
-- PyTorch >= 2.0
-- NumPy >= 1.24
-- Gymnasium >= 0.29
-- Matplotlib >= 3.7
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
 ## 라이선스
 
-본 프로젝트는 공군사관학교 소프트웨어응용(26-1학기) 연구 목적으로 작성되었습니다.
-
-**저장소**: [https://github.com/leeejunseo/MARL_FANET_RESEARCH](https://github.com/leeejunseo/MARL_FANET_RESEARCH)
----
-
-## 구현 완료 사항 (✓)
-
-| 모듈 | 구현 내용 |
-|---|---|
-| `train.py` | ✓ MADDPG 학습 + `MaliciousNodeDetector` 기반 탐지 보상 셰이핑 |
-| `eval.py` | ✓ 악의적 행동 시나리오별 평가 반복 및 `logs/eval_metrics.csv` 저장 |
-| `test.py` | ✓ 학습 모델 로드 평가, Tacview ACMI 생성, 평가 메트릭 CSV 저장 |
-| `config.yaml` | ✓ 평가 시나리오, 탐지 보상, ablation 설정, baseline 비교값 지원 (`use_xai`, `use_trust`, `use_marl`) |
-| `utils/metrics_logger.py` | ✓ 평가 로그에 시나리오 항목 추가, Precision/Recall/F1 필드 지원 |
-| `utils/plot_roc_auc.py` | ✓ 평가 기반 ROC/AUC 로딩, 시나리오별 ROC 시각화 |
-| `utils/plot_bar_comparison.py` | ✓ 실제 평가 메트릭 기반 EMARL-XAI 성능 반영, AODV/Standard MARL 비교 |
-| `utils/plot_detection_metrics.py` | ✓ Precision/Recall/F1 탐지 성능 지표 시각화 |
-| `analysis/xai_explainer.py` | ✓ Integrated Gradients 기반 XAI 분석 모듈 |
-| `ns3_wrapper/fanet_env.py` | ✓ FANET 환경 + 블랙홀/Selective Forwarding/Sybil 악의적 행동 모델 |
-| `analysis/malicious_detector.py` | ✓ SNR·Trust Score·Hop Count 기반 이상 점수 및 탐지 로직 |
-| `run_all.py` | ✓ 학습 → 평가 → 시각화 전체 파이프라인 자동 실행 |
-| `run_all.bat` | ✓ Windows용 전체 파이프라인 실행 스크립트 |
-| `Makefile` | ✓ Unix/macOS/Windows용 단일 명령 실행 규칙 제공 |
-
-## 향후 개선 사항 (선택)
-
-| 항목 | 설명 | 우선순위 |
-|---|---|---|
-| **실제 NS-3 연동** | Python 내부 시뮬레이션 → 실제 무선 채널/패킷 전달 반영 (gRPC/ZMQ/WSL2) | 낮음 |
-| **XAI 분석 강화** | Actor 모델 기반 XAI 분석 안정성 개선, fallback 로직 최적화 | 중간 |
-| **시나리오 확대** | 추가 악의적 행동 패턴 (Byzantine, Flooding 등) 시뮬레이션 | 낮음 |
-| **통신 모델 고도화** | Path Loss/Shadowing 등 실제 RF 환경 모델 추가 | 낮음 |
+공군사관학교 소프트웨어응용(26-1학기) 연구 목적으로 작성되었습니다.

@@ -188,6 +188,8 @@ def build_env_from_config(config):
         reward_w_delay=env_cfg.get("reward_w_delay", 1.0),
         reward_w_energy=env_cfg.get("reward_w_energy", 0.8),
         reward_w_security=env_cfg.get("reward_w_security", 1.2),
+        connectivity_guard_coeff=env_cfg.get("connectivity_guard_coeff", 0.35),
+        min_neighbor_target=env_cfg.get("min_neighbor_target", 2),
         alert_decay=env_cfg.get("alert_decay", 0.9),
         link_provider=link_provider,
     )

@@ -7,9 +7,9 @@ environment:
   velocity_damping: 0.05
   center_pull_coeff: 0.05
   center_reward_coeff: 0.05
-  reward_cov_coeff: 0.35
+  reward_cov_coeff: 0.08
   reward_col_coeff: 2.5
-  reward_conn_coeff: 2.0
+  reward_conn_coeff: 7.0
   reward_trust_pos_coeff: 1.8
   reward_trust_neg_coeff: 1.2
   trust_update_rate: 0.2
@@ -28,12 +28,20 @@ environment:
   reward_beta: 0.6
   reward_gamma: 0.4
   reward_delta: 1.0
-  reward_w_pdr: 1.0
+  reward_w_pdr: 1.6
   reward_w_trust: 1.0
-  reward_w_delay: 1.0
+  reward_w_delay: 1.2
   reward_w_energy: 0.8
-  reward_w_security: 0.5
+  reward_w_security: 0.8
   alert_decay: 0.9
+  wall_bounce_coeff: 0.6
+  wall_push_coeff: 0.15
+  boundary_margin_ratio: 0.08
+  boundary_avoid_accel: 0.35
+  boundary_penalty_coeff: 1.5
+  enable_boundary_shield: true
+  connectivity_guard_coeff: 0.7
+  min_neighbor_target: 3
   malicious_ratio: 0.1
   malicious_drop_rate: 0.4
   malicious_behavior: drop_and_trust
@@ -70,22 +78,22 @@ training:
 evaluation:
   scenarios:
     - name: "Default"
-      malicious_ratio: 0.33
+      malicious_ratio: 0.1
       malicious_behavior: drop_and_trust
       malicious_drop_rate: 0.4
       trust_noise: 0.05
     - name: "Blackhole"
-      malicious_ratio: 0.33
+      malicious_ratio: 0.2
       malicious_behavior: blackhole
       malicious_drop_rate: 0.5
       trust_noise: 0.05
     - name: "Selective Forwarding"
-      malicious_ratio: 0.33
+      malicious_ratio: 0.2
       malicious_behavior: selective_forwarding
       malicious_drop_rate: 0.4
       trust_noise: 0.05
     - name: "Sybil"
-      malicious_ratio: 0.33
+      malicious_ratio: 0.1
       malicious_behavior: sybil
       malicious_drop_rate: 0.4
       trust_noise: 0.05

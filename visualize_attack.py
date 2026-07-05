@@ -79,6 +79,8 @@ def build_env(config, scenario_name):
         malicious_drop_rate=scenario.get("malicious_drop_rate", env_cfg.get("malicious_drop_rate", 0.4)),
         malicious_behavior=scenario.get("malicious_behavior", env_cfg.get("malicious_behavior", "drop_and_trust")),
         trust_noise=scenario.get("trust_noise", env_cfg.get("trust_noise", 0.05)),
+        connectivity_guard_coeff=env_cfg.get("connectivity_guard_coeff", 0.35),
+        min_neighbor_target=env_cfg.get("min_neighbor_target", 2),
         velocity_damping=env_cfg.get("velocity_damping", 0.05),
         center_pull_coeff=env_cfg.get("center_pull_coeff", 0.12),
         center_reward_coeff=env_cfg.get("center_reward_coeff", 0.6),
@@ -398,23 +400,38 @@ def animate_trace(trace, env, scenario_name, out_path=None, show=True, fps=3, sc
         scatter_artist = ax.scatter(
             xy[:, 0],
             xy[:, 1],
-            s=240,
+            s=210,
             c=colors,
             edgecolors=edge_colors,
             linewidths=1.8,
             zorder=3,
         )
 
+        nearest_dist = np.full(env.num_drones, np.inf, dtype=float)
+        for i in range(env.num_drones):
+            for j in range(env.num_drones):
+                if i == j:
+                    continue
+                d_ij = float(np.linalg.norm(xy[i] - xy[j]))
+                if d_ij < nearest_dist[i]:
+                    nearest_dist[i] = d_ij
+        crowded = float(np.mean(nearest_dist)) < 55.0
+
         for i in range(env.num_drones):
             trust_text = trust[frame_idx][i] if trust.shape[0] > frame_idx else 0.0
             marker = " (M)" if i in malicious_ids else ""
+            angle = (2.0 * np.pi * i / max(1, env.num_drones)) + 0.15
+            radius = 26.0 if crowded else 16.0
+            dx = radius * np.cos(angle)
+            dy = radius * np.sin(angle)
+            label_text = f"UAV {i}{marker}" if crowded else f"UAV {i}{marker}\\nT:{trust_text:.2f}"
             text_artist = ax.text(
-                xy[i, 0] + 12,
-                xy[i, 1] + 12,
-                f"UAV {i}{marker}\\nT:{trust_text:.2f}",
-                fontsize=9,
+                xy[i, 0] + dx,
+                xy[i, 1] + dy,
+                label_text,
+                fontsize=8 if crowded else 9,
                 color="#1b1b1b",
-                bbox={"facecolor": "white", "alpha": 0.55, "edgecolor": "none", "pad": 1.5},
+                bbox={"facecolor": "white", "alpha": 0.5, "edgecolor": "none", "pad": 1.2},
                 zorder=4,
             )
             label_artists.append(text_artist)

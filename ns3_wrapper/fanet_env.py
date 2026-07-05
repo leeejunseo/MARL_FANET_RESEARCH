@@ -46,6 +46,12 @@ class AdvancedFANETEnv(gym.Env):
         alert_decay=0.9,
         wall_bounce_coeff=0.6,
         wall_push_coeff=0.15,
+        boundary_margin_ratio=0.08,
+        boundary_avoid_accel=0.35,
+        boundary_penalty_coeff=1.5,
+        enable_boundary_shield=True,
+        connectivity_guard_coeff=0.35,
+        min_neighbor_target=2,
         link_provider=None,
     ):
         super(AdvancedFANETEnv, self).__init__()
@@ -96,6 +102,12 @@ class AdvancedFANETEnv(gym.Env):
         self.alert_decay = float(alert_decay)
         self.wall_bounce_coeff = float(wall_bounce_coeff)
         self.wall_push_coeff = float(wall_push_coeff)
+        self.boundary_margin_ratio = float(boundary_margin_ratio)
+        self.boundary_avoid_accel = float(boundary_avoid_accel)
+        self.boundary_penalty_coeff = float(boundary_penalty_coeff)
+        self.enable_boundary_shield = bool(enable_boundary_shield)
+        self.connectivity_guard_coeff = float(connectivity_guard_coeff)
+        self.min_neighbor_target = int(min_neighbor_target)
         self.link_provider = link_provider
         self.malicious_ids = []
         self.step_count = 0
@@ -111,7 +123,7 @@ class AdvancedFANETEnv(gym.Env):
     def reset(self, seed=None):
         if seed is not None:
             np.random.seed(seed)
-        self.positions = np.random.uniform(450.0, 550.0, (self.num_drones, 3))
+        self.positions = self._sample_initial_positions()
         self.velocities = np.zeros((self.num_drones, 3))
         self.step_count = 0
         self.malicious_ids = []
@@ -127,9 +139,78 @@ class AdvancedFANETEnv(gym.Env):
         self._update_static_metrics()
         return self._get_obs(), self._get_global_state()
 
+    def _sample_initial_positions(self):
+        # Communication-first initialization:
+        # spread enough for exploration, but keep most drones link-reachable.
+        cx = np.random.uniform(self.max_pos * 0.4, self.max_pos * 0.6)
+        cy = np.random.uniform(self.max_pos * 0.4, self.max_pos * 0.6)
+        cz = np.random.uniform(self.max_pos * 0.45, self.max_pos * 0.55)
+        center = np.array([cx, cy, cz], dtype=float)
+
+        ring_radius = min(self.R_c * 0.33, self.max_pos * 0.14)
+        z_jitter = min(self.max_pos * 0.03, self.R_c * 0.1)
+        min_sep = max(self.d_safe * 1.15, self.R_c * 0.08)
+
+        positions = []
+        for i in range(self.num_drones):
+            placed = False
+            for _ in range(120):
+                angle = (2.0 * np.pi * i / max(1, self.num_drones)) + np.random.uniform(-0.2, 0.2)
+                radial = ring_radius + np.random.uniform(-0.18, 0.18) * ring_radius
+                p = center + np.array(
+                    [
+                        radial * np.cos(angle),
+                        radial * np.sin(angle),
+                        np.random.uniform(-z_jitter, z_jitter),
+                    ],
+                    dtype=float,
+                )
+                p = np.clip(p, self.max_pos * 0.1, self.max_pos * 0.9)
+
+                if not positions:
+                    positions.append(p)
+                    placed = True
+                    break
+                d = np.linalg.norm(np.array(positions) - p, axis=1)
+                if np.all(d >= min_sep):
+                    positions.append(p)
+                    placed = True
+                    break
+
+            if not placed:
+                positions.append(np.clip(center + np.random.uniform(-ring_radius, ring_radius, size=3), 0.0, self.max_pos))
+
+        return np.array(positions, dtype=float)
+
     def step(self, actions):
         self.step_count += 1
         actions = np.clip(actions, -1.0, 1.0)
+
+        # Safety shield near walls: suppress outward actions and add inward bias.
+        if self.enable_boundary_shield:
+            margin = max(1.0, self.max_pos * self.boundary_margin_ratio)
+            for axis in range(3):
+                coord = self.positions[:, axis]
+                near_low = coord < margin
+                near_high = coord > (self.max_pos - margin)
+
+                # Block actions that push further outside near the walls.
+                low_outward = near_low & (actions[:, axis] < 0.0)
+                high_outward = near_high & (actions[:, axis] > 0.0)
+                actions[low_outward, axis] = 0.0
+                actions[high_outward, axis] = 0.0
+
+                # Add a smooth inward push that grows closer to the wall.
+                if np.any(near_low):
+                    low_strength = 1.0 - np.clip(coord[near_low] / margin, 0.0, 1.0)
+                    actions[near_low, axis] += self.boundary_avoid_accel * low_strength
+                if np.any(near_high):
+                    high_dist = (self.max_pos - coord[near_high])
+                    high_strength = 1.0 - np.clip(high_dist / margin, 0.0, 1.0)
+                    actions[near_high, axis] -= self.boundary_avoid_accel * high_strength
+
+            actions = np.clip(actions, -1.0, 1.0)
+
         self.velocities += actions * 2.0
 
         # Suppress long-term drift: apply velocity damping and a mild pull toward map center.
@@ -139,6 +220,35 @@ class AdvancedFANETEnv(gym.Env):
         self.velocities += (
             -self.center_pull_coeff * ((self.positions - center) / self.max_pos) * self.max_vel
         )
+
+        # Connectivity guard: if a drone has too few predicted neighbors,
+        # nudge it back toward nearby teammates to keep communication links.
+        if self.min_neighbor_target > 0 and self.connectivity_guard_coeff > 0.0:
+            predicted = self.positions + self.velocities
+            pred_diff = predicted[:, None, :] - predicted[None, :, :]
+            pred_dist = np.linalg.norm(pred_diff, axis=-1)
+            for i in range(self.num_drones):
+                neighbors = int(np.sum(pred_dist[i] <= self.R_c) - 1)
+                if neighbors >= self.min_neighbor_target:
+                    continue
+                order = np.argsort(pred_dist[i])
+                k = min(self.min_neighbor_target, self.num_drones - 1)
+                close_ids = [idx for idx in order if idx != i][:k]
+                if not close_ids:
+                    continue
+                target = np.mean(predicted[close_ids], axis=0)
+                direction = target - predicted[i]
+                norm = np.linalg.norm(direction)
+                if norm > 1e-6:
+                    nearest = float(pred_dist[i, close_ids[0]])
+                    stretch = max(0.0, (nearest - self.R_c) / max(self.R_c, 1e-6))
+                    pull_gain = self.connectivity_guard_coeff * (1.0 + 1.8 * stretch)
+                    pull_gain = min(1.2, pull_gain)
+                    self.velocities[i] += (
+                        pull_gain
+                        * (direction / norm)
+                        * self.max_vel
+                    )
 
         self.velocities = np.clip(self.velocities, -self.max_vel, self.max_vel)
         self.positions += self.velocities
@@ -398,6 +508,20 @@ class AdvancedFANETEnv(gym.Env):
         centroid_drift = float(np.linalg.norm(centroid - center) / max_center_dist)
         rewards -= self.center_reward_coeff * centroid_drift
 
+        # Penalize staying too close to walls to avoid boundary hugging.
+        margin = max(1.0, self.max_pos * self.boundary_margin_ratio)
+        wall_clearance = np.min(
+            np.minimum(self.positions, self.max_pos - self.positions),
+            axis=1,
+        )
+        boundary_proximity = np.clip(1.0 - (wall_clearance / margin), 0.0, 1.0)
+        rewards -= self.boundary_penalty_coeff * boundary_proximity
+
+        # Extra penalty when a drone is almost stationary while hugging the wall.
+        speed_norm = np.linalg.norm(self.velocities, axis=1) / max(self.max_vel, 1e-6)
+        stuck_near_wall = (boundary_proximity > 0.7) & (speed_norm < 0.05)
+        rewards[stuck_near_wall] -= 0.5
+
         info = {
             "pdr": pdr,
             "avg_hop": avg_hop,
@@ -411,6 +535,8 @@ class AdvancedFANETEnv(gym.Env):
             "disconnect_ratio": disconnect_ratio,
             "centroid": centroid.tolist(),
             "centroid_drift": centroid_drift,
+            "avg_boundary_proximity": float(np.mean(boundary_proximity)),
+            "wall_hugging_count": int(np.sum(boundary_proximity > 0.7)),
             "malicious_ids": self.malicious_ids,
             "node_features": node_features,
             "node_labels": node_labels,

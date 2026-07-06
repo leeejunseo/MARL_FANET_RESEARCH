@@ -5,10 +5,12 @@ import numpy as np
 import torch
 from ns3_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
+from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
 from utils.metrics_logger import EvalMetricsLogger
 from utils.config import load_config
 from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
+from utils.algorithm import normalize_algorithm, display_algorithm, resolve_actor_prefix, resolve_file_path
 from ns3_wrapper.provider_factory import build_link_provider
 
 
@@ -198,22 +200,40 @@ def build_env_from_config(config):
 
 def load_trained_agents(env, config):
     eval_cfg = config["evaluation"]
-    model_prefix = eval_cfg["actor_model_prefix"]
+    algorithm = normalize_algorithm(config.get("training", {}).get("algorithm", "maddpg"))
+    model_prefix = resolve_actor_prefix(eval_cfg["actor_model_prefix"], algorithm)
     episode_to_load = eval_cfg["model_episode"]
+    matd3_cfg = config.get("training", {}).get("matd3", {})
     agents = []
     for i in range(env.num_drones):
         path = model_prefix.format(i=i, episode=episode_to_load)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Actor 모델을 찾을 수 없습니다: {path}")
         actor_obs_dim = infer_actor_obs_dim_from_checkpoint(path)
-        agent = MADDPGAgent(
-            env.obs_dim,
-            env.state_dim,
-            env.action_dim,
-            env.num_drones,
-            agent_id=i,
-            actor_obs_dim=actor_obs_dim,
-        )
+        if algorithm == "matd3":
+            agent = MATD3Agent(
+                env.obs_dim,
+                env.state_dim,
+                env.action_dim,
+                env.num_drones,
+                agent_id=i,
+                actor_lr=matd3_cfg.get("actor_lr", config["training"].get("lr", 1e-3)),
+                critic_lr=matd3_cfg.get("critic_lr", config["training"].get("lr", 1e-3)),
+                actor_obs_dim=actor_obs_dim,
+                policy_delay=matd3_cfg.get("policy_delay", 2),
+                target_policy_noise=matd3_cfg.get("target_policy_noise", 0.2),
+                target_noise_clip=matd3_cfg.get("target_noise_clip", 0.5),
+                explore_noise_std=matd3_cfg.get("explore_noise_std", 0.1),
+            )
+        else:
+            agent = MADDPGAgent(
+                env.obs_dim,
+                env.state_dim,
+                env.action_dim,
+                env.num_drones,
+                agent_id=i,
+                actor_obs_dim=actor_obs_dim,
+            )
         agent.actor.load_state_dict(torch.load(path, map_location="cpu"))
         agents.append(agent)
     return agents
@@ -224,6 +244,8 @@ def test_inference():
     config = load_config()
     env_cfg = config["environment"]
     eval_cfg = config["evaluation"]
+    algorithm = normalize_algorithm(config.get("training", {}).get("algorithm", "maddpg"))
+    policy_label = display_algorithm(algorithm)
     default_seeds = eval_cfg.get("test_seeds", [42, 43, 44, 45, 46])
     seeds = parse_seed_list(args.seeds, default_seeds)
     max_steps = args.max_steps if args.max_steps is not None else eval_cfg["max_steps"]
@@ -242,10 +264,10 @@ def test_inference():
     else:
         bridge_modes = [config.get("ns3_bridge", {}).get("enabled", False)]
 
-    logger_path = eval_cfg.get("test_output_csv", "logs/test_metrics.csv")
+    logger_path = resolve_file_path(eval_cfg.get("test_output_csv", "logs/test_metrics.csv"), algorithm)
     logger = EvalMetricsLogger(logger_path, overwrite=eval_cfg.get("test_overwrite_csv", True))
 
-    print("=== 완성된 신경망 기반 전술 기동 평가 시작 ===")
+    print(f"=== {policy_label} 기반 전술 기동 평가 시작 ===")
     print(f"seeds={seeds} | max_steps={max_steps} | bridge_modes={bridge_modes}")
 
     detector = MaliciousNodeDetector()
@@ -286,7 +308,7 @@ def test_inference():
 
             trained_runs.append(trained_stats)
             random_runs.append(random_stats)
-            logger.log_episode(row_id, trained_stats, scenario=f"Default|bridge={bridge_enabled}|seed={seed}", policy="Trained")
+            logger.log_episode(row_id, trained_stats, scenario=f"Default|bridge={bridge_enabled}|seed={seed}", policy=policy_label)
             row_id += 1
             logger.log_episode(row_id, random_stats, scenario=f"Default|bridge={bridge_enabled}|seed={seed}", policy="Random")
             row_id += 1

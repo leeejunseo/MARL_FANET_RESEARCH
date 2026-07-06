@@ -5,10 +5,12 @@ import torch
 
 from ns3_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
+from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
 from utils.config import load_config
 from utils.metrics_logger import EvalMetricsLogger
 from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
+from utils.algorithm import normalize_algorithm, display_algorithm, resolve_actor_prefix, resolve_file_path
 from ns3_wrapper.provider_factory import build_link_provider
 
 
@@ -36,8 +38,10 @@ def load_agents(env, config):
     action_dim = env.action_dim
     obs_dim = env.obs_dim
     episode = config["evaluation"]["model_episode"]
-    prefix = config["evaluation"]["actor_model_prefix"]
+    algorithm = normalize_algorithm(config.get("training", {}).get("algorithm", "maddpg"))
+    prefix = resolve_actor_prefix(config["evaluation"]["actor_model_prefix"], algorithm)
     use_marl = config.get("training", {}).get("ablation", {}).get("use_marl", True)
+    matd3_cfg = config.get("training", {}).get("matd3", {})
 
     agents = []
     for i in range(num_drones):
@@ -45,15 +49,32 @@ def load_agents(env, config):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Actor 모델을 찾을 수 없습니다: {path}")
         actor_obs_dim = infer_actor_obs_dim_from_checkpoint(path)
-        agent = MADDPGAgent(
-            obs_dim,
-            env.state_dim,
-            action_dim,
-            num_drones,
-            agent_id=i,
-            use_marl=use_marl,
-            actor_obs_dim=actor_obs_dim,
-        )
+        if algorithm == "matd3":
+            agent = MATD3Agent(
+                obs_dim,
+                env.state_dim,
+                action_dim,
+                num_drones,
+                agent_id=i,
+                actor_lr=matd3_cfg.get("actor_lr", config["training"].get("lr", 1e-3)),
+                critic_lr=matd3_cfg.get("critic_lr", config["training"].get("lr", 1e-3)),
+                use_marl=use_marl,
+                actor_obs_dim=actor_obs_dim,
+                policy_delay=matd3_cfg.get("policy_delay", 2),
+                target_policy_noise=matd3_cfg.get("target_policy_noise", 0.2),
+                target_noise_clip=matd3_cfg.get("target_noise_clip", 0.5),
+                explore_noise_std=matd3_cfg.get("explore_noise_std", 0.1),
+            )
+        else:
+            agent = MADDPGAgent(
+                obs_dim,
+                env.state_dim,
+                action_dim,
+                num_drones,
+                agent_id=i,
+                use_marl=use_marl,
+                actor_obs_dim=actor_obs_dim,
+            )
         agent.actor.load_state_dict(torch.load(path, map_location="cpu"))
         agents.append(agent)
     return agents
@@ -150,6 +171,8 @@ def main():
     config = load_config()
     env_cfg = config["environment"]
     eval_cfg = config["evaluation"]
+    algorithm = normalize_algorithm(config.get("training", {}).get("algorithm", "maddpg"))
+    policy_label = display_algorithm(algorithm)
 
     scenarios = eval_cfg.get("scenarios") or [
         {
@@ -160,14 +183,15 @@ def main():
             "trust_noise": env_cfg.get("trust_noise", 0.05),
         }
     ]
-    logger = EvalMetricsLogger(eval_cfg["output_csv"])
+    output_csv = resolve_file_path(eval_cfg["output_csv"], algorithm)
+    logger = EvalMetricsLogger(output_csv, overwrite=eval_cfg.get("overwrite_csv", True))
 
-    print("=== EMARL-XAI 평가 실행 ===")
+    print(f"=== {policy_label} 평가 실행 ===")
     print(f"에피소드 수: {eval_cfg['episodes']} | 최대 스텝: {eval_cfg['max_steps']}")
 
     all_features = []
     all_labels = []
-    roc_path_template = eval_cfg.get("roc_data_path_template", eval_cfg["roc_data_path"])
+    roc_path_template = resolve_file_path(eval_cfg.get("roc_data_path_template", eval_cfg["roc_data_path"]), algorithm)
     ablation_cfg = config.get("training", {}).get("ablation", {})
 
     for scenario in scenarios:
@@ -230,7 +254,7 @@ def main():
                 eval_cfg["detection_threshold"],
                 ablation_cfg,
             )
-            logger.log_episode(episode, stats, scenario=scenario["name"])
+            logger.log_episode(episode, stats, scenario=scenario["name"], policy=policy_label)
 
             if stats["step_features"] is not None and stats["step_labels"] is not None:
                 scenario_features.append(stats["step_features"])
@@ -254,14 +278,15 @@ def main():
             np.savez(scenario_path, features=scenario_features, labels=scenario_labels)
             print(f"시나리오별 ROC 데이터 저장 완료: {scenario_path}")
 
+    roc_data_path = resolve_file_path(eval_cfg["roc_data_path"], algorithm)
     if all_features and all_labels:
         all_features = np.vstack(all_features)
         all_labels = np.concatenate(all_labels)
-        os.makedirs(os.path.dirname(eval_cfg["roc_data_path"]), exist_ok=True)
-        np.savez(eval_cfg["roc_data_path"], features=all_features, labels=all_labels)
-        print(f"통합 ROC 데이터 저장 완료: {eval_cfg['roc_data_path']}")
+        os.makedirs(os.path.dirname(roc_data_path), exist_ok=True)
+        np.savez(roc_data_path, features=all_features, labels=all_labels)
+        print(f"통합 ROC 데이터 저장 완료: {roc_data_path}")
 
-    print(f"평가 결과 CSV 저장 완료: {eval_cfg['output_csv']}")
+    print(f"평가 결과 CSV 저장 완료: {output_csv}")
 
 
 if __name__ == "__main__":

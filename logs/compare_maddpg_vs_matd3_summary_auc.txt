@@ -1,0 +1,3 @@
+MADDPG_auc=0.623673
+MATD3_auc=0.632915
+delta_auc=0.009243

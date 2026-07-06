@@ -3,10 +3,12 @@ import numpy as np
 import torch
 from ns3_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
+from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
 from utils.replay_buffer import ReplayBuffer
 from utils.metrics_logger import MetricsLogger
 from utils.config import load_config
+from utils.algorithm import normalize_algorithm, display_algorithm, resolve_model_dir, resolve_file_path
 from ns3_wrapper.provider_factory import build_link_provider
 
 
@@ -26,9 +28,11 @@ def main():
     config = load_config()
     env_cfg = config["environment"]
     training_cfg = config["training"]
+    algorithm = normalize_algorithm(training_cfg.get("algorithm", "maddpg"))
 
     print("========================================================")
     print("  MARL-FANET 심층 학습 시스템")
+    print(f"  알고리즘: {display_algorithm(algorithm)}")
     print("========================================================")
     
     num_drones = env_cfg["num_drones"]
@@ -78,16 +82,35 @@ def main():
     gamma = training_cfg["gamma"]
     tau = training_cfg["tau"]
     ablation_cfg = training_cfg.get("ablation", {})
+    matd3_cfg = training_cfg.get("matd3", {})
 
-    agents = [MADDPGAgent(
-        env.obs_dim,
-        env.state_dim,
-        env.action_dim,
-        num_drones,
-        agent_id=i,
-        lr=lr,
-        use_marl=ablation_cfg.get("use_marl", True),
-    ) for i in range(num_drones)]
+    if algorithm == "matd3":
+        actor_lr = matd3_cfg.get("actor_lr", lr)
+        critic_lr = matd3_cfg.get("critic_lr", lr)
+        agents = [MATD3Agent(
+            env.obs_dim,
+            env.state_dim,
+            env.action_dim,
+            num_drones,
+            agent_id=i,
+            actor_lr=actor_lr,
+            critic_lr=critic_lr,
+            use_marl=ablation_cfg.get("use_marl", True),
+            policy_delay=matd3_cfg.get("policy_delay", 2),
+            target_policy_noise=matd3_cfg.get("target_policy_noise", 0.2),
+            target_noise_clip=matd3_cfg.get("target_noise_clip", 0.5),
+            explore_noise_std=matd3_cfg.get("explore_noise_std", 0.1),
+        ) for i in range(num_drones)]
+    else:
+        agents = [MADDPGAgent(
+            env.obs_dim,
+            env.state_dim,
+            env.action_dim,
+            num_drones,
+            agent_id=i,
+            lr=lr,
+            use_marl=ablation_cfg.get("use_marl", True),
+        ) for i in range(num_drones)]
     replay_buffer = ReplayBuffer(100000, env.obs_dim, env.state_dim, env.action_dim, num_drones)
     
     # 학습 하이퍼파라미터
@@ -98,8 +121,8 @@ def main():
     save_interval = training_cfg["save_interval"]
     
     global_step = 0
-    model_dir = training_cfg["model_dir"]
-    metrics_logger = MetricsLogger(training_cfg["log_path"])
+    model_dir = resolve_model_dir(training_cfg["model_dir"], algorithm)
+    metrics_logger = MetricsLogger(resolve_file_path(training_cfg["log_path"], algorithm))
     
     print("\n[알림] 대규모 데이터 수집 및 인공지능 최적화 시작...")
     

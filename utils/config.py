@@ -18,12 +18,21 @@ DEFAULT_CONFIG = {
         "trust_noise": 0.05,
     },
     "training": {
+        "algorithm": "maddpg",
         "max_episodes": 1000,
         "max_steps": 60,
         "warmup_steps": 500,
         "save_interval": 200,
         "batch_size": 128,
         "lr": 1e-3,
+        "matd3": {
+            "actor_lr": 1e-3,
+            "critic_lr": 1e-3,
+            "policy_delay": 2,
+            "target_policy_noise": 0.2,
+            "target_noise_clip": 0.5,
+            "explore_noise_std": 0.1,
+        },
         "gamma": 0.95,
         "tau": 0.01,
         "detection_threshold": 0.5,
@@ -111,6 +120,10 @@ DEFAULT_CONFIG = {
 
 
 def load_config(path="config.yaml"):
+    env_path = os.environ.get("MARL_CONFIG_PATH")
+    if env_path:
+        path = env_path
+
     if os.path.exists(path) and yaml is not None:
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)

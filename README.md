@@ -9,6 +9,10 @@
 - 2D 통신/공격 애니메이션 시각화
 - 군집 중심 드리프트 억제(속도 감쇠 + 중앙 유지 항)
 
+현재 메인 실험 목표:
+- `MADDPG`와 `MATD3`를 동일 환경/지표로 비교
+- 학습 수렴 곡선, 시나리오별 성능, ROC-AUC를 동일 포맷으로 저장
+
 ## 현재 기본 설정
 
 - 드론 수: 10
@@ -68,6 +72,98 @@ python eval.py
 # 4) 논문용 그래프 일괄 생성
 python utils/generate_all_plots.py
 ```
+
+## 메인 워크플로우: MADDPG vs MATD3 비교
+
+아래 순서대로 실행하면 두 알고리즘 비교 산출물이 자동으로 정리됩니다.
+
+1) MADDPG 기준선 생성 및 보관
+
+```bash
+# config.yaml: training.algorithm: maddpg
+python train.py
+python eval.py
+python test.py
+python utils/archive_experiment.py --algorithm maddpg --run-tag baseline_maddpg --include-config
+```
+
+2) MATD3 후보 생성 및 보관
+
+```bash
+# config.yaml: training.algorithm: matd3
+python train.py
+python eval.py
+python test.py
+python utils/archive_experiment.py --algorithm matd3 --run-tag candidate_matd3 --include-config
+```
+
+3) 자동 비교 그래프/요약 생성
+
+```bash
+python utils/compare_algorithm_results.py \
+	--baseline-dir logs/experiments/maddpg_baseline_maddpg \
+	--candidate-dir logs/experiments/matd3_candidate_matd3 \
+	--baseline-label MADDPG \
+	--candidate-label MATD3 \
+	--output-dir logs \
+	--prefix compare_maddpg_vs_matd3
+```
+
+생성 결과:
+- `logs/compare_maddpg_vs_matd3_learning_curve.png`
+- `logs/compare_maddpg_vs_matd3_eval_bar.png`
+- `logs/compare_maddpg_vs_matd3_roc_auc.png`
+- `logs/compare_maddpg_vs_matd3_summary.csv`
+- `logs/compare_maddpg_vs_matd3_summary_auc.txt`
+
+4) 비교 리포트 자동 생성 (해석 문장 포함)
+
+```bash
+python utils/generate_comparison_report.py \
+	--summary-csv logs/compare_maddpg_vs_matd3_summary.csv \
+	--auc-txt logs/compare_maddpg_vs_matd3_summary_auc.txt \
+	--baseline-label MADDPG \
+	--candidate-label MATD3 \
+	--output-md logs/compare_maddpg_vs_matd3_report.md \
+	--learning-curve logs/compare_maddpg_vs_matd3_learning_curve.png \
+	--eval-bar logs/compare_maddpg_vs_matd3_eval_bar.png \
+	--roc-plot logs/compare_maddpg_vs_matd3_roc_auc.png
+```
+
+생성 결과:
+- `logs/compare_maddpg_vs_matd3_report.md`
+
+### 현재 비교 결과 요약 (최근 실행)
+
+- 시나리오 평균 기준: MATD3는 PDR 증가(+), 지연 감소(-), 탐지 F1 감소(-) 경향
+- AUC: MADDPG 0.623673, MATD3 0.632915 (delta +0.009243)
+- 시나리오별 delta (`MATD3 - MADDPG`)
+	- Blackhole: PDR +0.030830, Delay -28.780375ms, Detection F1 -0.081128
+	- Default: PDR +0.012645, Delay -32.609207ms, Detection F1 -0.156615
+	- Selective Forwarding: PDR +0.012315, Delay -31.547870ms, Detection F1 -0.078978
+	- Sybil: PDR +0.032545, Delay -34.995230ms, Detection F1 -0.170623
+
+## MATD3 탐지 F1 보완 스윕
+
+짧은 MATD3 하이퍼파라미터 스윕(탐지 보상/threshold/target noise)을 자동 실행합니다.
+
+```bash
+python utils/run_matd3_f1_sweep.py \
+	--baseline-dir logs/experiments/maddpg_baseline_maddpg \
+	--episodes 180 \
+	--eval-episodes 12
+```
+
+산출물:
+- `logs/sweeps/matd3_f1_sweep_YYYYMMDD_HHMMSS/sweep_results.csv`
+- 각 variant의 archive: `logs/experiments/matd3_candidate_<variant>/`
+- 각 variant의 비교 요약: `logs/compare_maddpg_vs_<variant>_summary.csv`
+
+## 평가 CSV 스키마 안정화
+
+- `evaluation.overwrite_csv: true` (기본 권장)
+- 목적: `eval_metrics.csv`에 이전 포맷 행이 누적되어 컬럼 시프트가 발생하는 문제 방지
+- 스크립트 측 보정: `utils/compare_algorithm_results.py`는 `policy` 컬럼 유무가 혼재된 CSV도 자동 정렬
 
 ## 2D 통신 공격 시각화
 
@@ -251,9 +347,9 @@ run_ns3_bridge_pipeline.bat logs\ns3_events.csv
 
 ## 추천 다음 단계
 
-- 10드론 기준으로 `train.py` 재실행
-- `test.py`로 multi-seed 재평가
-- `visualize_attack.py`로 2D 시각화 GIF 생성
+- MATD3 장기 학습(예: 1000ep)으로 동일 파이프라인 재실행
+- `test.py --compare-bridge` 결과를 비교표에 추가
+- `visualize_attack.py`로 동일 seed의 정책 행동 차이 GIF 비교
 
 ## 요구사항
 

@@ -1,0 +1,90 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "train-matd3-short",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"train.py"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "eval-matd3",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"eval.py"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "test-matd3",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"test.py"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "archive-matd3",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"utils/archive_experiment.py",
+				"--algorithm",
+				"matd3",
+				"--run-tag",
+				"candidate_matd3",
+				"--include-config"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "compare-maddpg-matd3",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"utils/compare_algorithm_results.py",
+				"--baseline-dir",
+				"logs/experiments/maddpg_baseline_maddpg",
+				"--candidate-dir",
+				"logs/experiments/matd3_candidate_matd3",
+				"--baseline-label",
+				"MADDPG",
+				"--candidate-label",
+				"MATD3",
+				"--output-dir",
+				"logs",
+				"--prefix",
+				"compare_maddpg_vs_matd3"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "eval-maddpg-refresh",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"eval.py"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "archive-maddpg-v2",
+			"type": "shell",
+			"command": "c:/Users/User/Desktop/공군사관학교/교수부/26-1학기/소프트웨어응용/marl_fanet_research/.venv/Scripts/python.exe",
+			"args": [
+				"utils/archive_experiment.py",
+				"--algorithm",
+				"maddpg",
+				"--run-tag",
+				"baseline_maddpg_v2",
+				"--include-config"
+			],
+			"isBackground": false
+		}
+	]
+}

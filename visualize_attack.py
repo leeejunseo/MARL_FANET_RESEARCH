@@ -8,9 +8,10 @@ import numpy as np
 import torch
 
 from agents.maddpg import MADDPGAgent
+from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
-from ns3_wrapper.fanet_env import AdvancedFANETEnv
-from ns3_wrapper.provider_factory import build_link_provider
+from fanet_wrapper.fanet_env import AdvancedFANETEnv
+from utils.algorithm import normalize_algorithm, resolve_actor_prefix
 from utils.config import load_config
 
 
@@ -22,10 +23,12 @@ def infer_actor_obs_dim_from_checkpoint(path):
     raise ValueError(f"Cannot infer actor obs_dim from checkpoint: {path}")
 
 
-def load_agents(env, config, episode):
+def load_agents(env, config, episode, algorithm=None):
     num_drones = config["environment"]["num_drones"]
-    prefix = config["evaluation"]["actor_model_prefix"]
+    algo = normalize_algorithm(algorithm or config.get("training", {}).get("algorithm", "maddpg"))
+    prefix = resolve_actor_prefix(config["evaluation"]["actor_model_prefix"], algo)
     use_marl = config.get("training", {}).get("ablation", {}).get("use_marl", True)
+    matd3_cfg = config.get("training", {}).get("matd3", {})
 
     agents = []
     for i in range(num_drones):
@@ -34,15 +37,32 @@ def load_agents(env, config, episode):
             raise FileNotFoundError(f"Actor model not found: {path}")
 
         actor_obs_dim = infer_actor_obs_dim_from_checkpoint(path)
-        agent = MADDPGAgent(
-            env.obs_dim,
-            env.state_dim,
-            env.action_dim,
-            num_drones,
-            agent_id=i,
-            use_marl=use_marl,
-            actor_obs_dim=actor_obs_dim,
-        )
+        if algo == "matd3":
+            agent = MATD3Agent(
+                env.obs_dim,
+                env.state_dim,
+                env.action_dim,
+                num_drones,
+                agent_id=i,
+                actor_lr=matd3_cfg.get("actor_lr", config.get("training", {}).get("lr", 1e-3)),
+                critic_lr=matd3_cfg.get("critic_lr", config.get("training", {}).get("lr", 1e-3)),
+                use_marl=use_marl,
+                actor_obs_dim=actor_obs_dim,
+                policy_delay=matd3_cfg.get("policy_delay", 2),
+                target_policy_noise=matd3_cfg.get("target_policy_noise", 0.2),
+                target_noise_clip=matd3_cfg.get("target_noise_clip", 0.5),
+                explore_noise_std=matd3_cfg.get("explore_noise_std", 0.1),
+            )
+        else:
+            agent = MADDPGAgent(
+                env.obs_dim,
+                env.state_dim,
+                env.action_dim,
+                num_drones,
+                agent_id=i,
+                use_marl=use_marl,
+                actor_obs_dim=actor_obs_dim,
+            )
         agent.actor.load_state_dict(torch.load(path, map_location="cpu"))
         agents.append(agent)
 
@@ -51,7 +71,6 @@ def load_agents(env, config, episode):
 
 def build_env(config, scenario_name):
     env_cfg = config["environment"]
-    link_provider = build_link_provider(config, env_cfg["num_drones"])
     scenarios = config.get("evaluation", {}).get("scenarios", [])
     scenario = None
 
@@ -110,8 +129,10 @@ def build_env(config, scenario_name):
         reward_w_delay=env_cfg.get("reward_w_delay", 1.0),
         reward_w_energy=env_cfg.get("reward_w_energy", 0.8),
         reward_w_security=env_cfg.get("reward_w_security", 1.2),
+        malicious_avoid_coeff=env_cfg.get("malicious_avoid_coeff", 0.65),
+        suspicious_avoid_coeff=env_cfg.get("suspicious_avoid_coeff", 0.35),
+        avoid_distance_factor=env_cfg.get("avoid_distance_factor", 1.15),
         alert_decay=env_cfg.get("alert_decay", 0.9),
-        link_provider=link_provider,
     )
     return env, scenario
 
@@ -137,8 +158,11 @@ def rollout_trace(env, agents, max_steps, seed, policy, detector=None, scenario_
 
         next_obs, _, _, terminated, info = env.step(actions)
         pos = env.positions.copy()
-        d = np.linalg.norm(pos[:, None, :] - pos[None, :, :], axis=-1)
-        conn = d <= env.R_c
+        if info.get("connected_matrix") is not None:
+            conn = np.array(info["connected_matrix"], dtype=bool)
+        else:
+            d = np.linalg.norm(pos[:, None, :] - pos[None, :, :], axis=-1)
+            conn = d <= env.R_c
 
         malicious = set(info.get("malicious_ids", []))
         edge_attack = np.zeros_like(conn, dtype=bool)
@@ -491,7 +515,9 @@ def animate_trace(trace, env, scenario_name, out_path=None, show=True, fps=3, sc
 
 def parse_args():
     parser = argparse.ArgumentParser(description="2D FANET communication/attack visualization.")
+    parser.add_argument("--config", type=str, default="config.yaml", help="Path to config YAML used to build env and model prefix")
     parser.add_argument("--policy", choices=["trained", "random"], default="trained")
+    parser.add_argument("--algorithm", choices=["maddpg", "matd3"], default=None, help="Policy algorithm for trained checkpoints")
     parser.add_argument("--scenario", default="Default", help="Default, Blackhole, Selective_Forwarding, Sybil")
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
@@ -507,7 +533,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    config = load_config()
+    config = load_config(args.config)
     detector = MaliciousNodeDetector()
 
     if args.demo_60:
@@ -529,8 +555,14 @@ def main():
         max_steps = args.max_steps if args.max_steps is not None else config["evaluation"]["max_steps"]
 
         if args.policy == "trained":
-            episode = args.episode if args.episode is not None else config["evaluation"]["model_episode"]
-            agents = load_agents(env, config, episode)
+            algorithm = normalize_algorithm(args.algorithm or config.get("training", {}).get("algorithm", "maddpg"))
+            if args.episode is not None:
+                episode = args.episode
+            elif algorithm == "matd3":
+                episode = 20
+            else:
+                episode = config["evaluation"]["model_episode"]
+            agents = load_agents(env, config, episode, algorithm=algorithm)
         else:
             agents = None
 

@@ -9,7 +9,7 @@ environment:
   center_reward_coeff: 0.05
   reward_cov_coeff: 0.08
   reward_col_coeff: 2.5
-  reward_conn_coeff: 7.0
+  reward_conn_coeff: 5.5
   reward_trust_pos_coeff: 1.8
   reward_trust_neg_coeff: 1.2
   trust_update_rate: 0.2
@@ -32,7 +32,7 @@ environment:
   reward_w_trust: 1.0
   reward_w_delay: 1.2
   reward_w_energy: 0.8
-  reward_w_security: 0.8
+  reward_w_security: 1.6
   alert_decay: 0.9
   wall_bounce_coeff: 0.6
   wall_push_coeff: 0.15
@@ -40,18 +40,15 @@ environment:
   boundary_avoid_accel: 0.35
   boundary_penalty_coeff: 1.5
   enable_boundary_shield: true
-  connectivity_guard_coeff: 0.7
-  min_neighbor_target: 3
+  connectivity_guard_coeff: 0.45
+  min_neighbor_target: 2
+  malicious_avoid_coeff: 0.65
+  suspicious_avoid_coeff: 0.35
+  avoid_distance_factor: 1.15
   malicious_ratio: 0.1
   malicious_drop_rate: 0.4
   malicious_behavior: drop_and_trust
   trust_noise: 0.05
-
-ns3_bridge:
-  enabled: false
-  provider: csv_trace
-  csv_trace_path: logs/ns3_link_trace.csv
-  strict: false
 
 training:
   algorithm: maddpg
@@ -91,12 +88,12 @@ evaluation:
       malicious_drop_rate: 0.4
       trust_noise: 0.05
     - name: "Blackhole"
-      malicious_ratio: 0.2
+      malicious_ratio: 0.1
       malicious_behavior: blackhole
       malicious_drop_rate: 0.5
       trust_noise: 0.05
     - name: "Selective Forwarding"
-      malicious_ratio: 0.2
+      malicious_ratio: 0.1
       malicious_behavior: selective_forwarding
       malicious_drop_rate: 0.4
       trust_noise: 0.05
@@ -113,7 +110,6 @@ evaluation:
   overwrite_csv: true
   detection_threshold: 0.5
   test_seeds: [42, 43, 44, 45, 46]
-  test_compare_bridge: true
   test_output_csv: logs/test_metrics.csv
   test_overwrite_csv: true
   roc_data_path_template: logs/eval_node_features_{scenario}.npz

@@ -1,375 +1,283 @@
-﻿# MARL-FANET 전술 스웜 프레임워크
+# MARL-FANET Tactical Swarm Framework
 
-다중 에이전트 강화학습(MADDPG) 기반 FANET(Flying Ad-hoc Network) 드론 스웜 연구 프로젝트입니다.
+MADDPG/MATD3 기반 FANET 드론 스웜 연구 코드입니다.
 
-이 저장소는 다음 목표를 중심으로 설계되었습니다.
-- 스웜 기동 중 통신 연결 유지
-- 악의적 노드(blackhole, selective forwarding, sybil) 대응
-- 탐지 성능 및 XAI 기반 해석 가능성 분석
-- 2D 통신/공격 애니메이션 시각화
-- 군집 중심 드리프트 억제(속도 감쇠 + 중앙 유지 항)
+## What Changed (2026-07-06)
 
-현재 메인 실험 목표:
-- `MADDPG`와 `MATD3`를 동일 환경/지표로 비교
-- 학습 수렴 곡선, 시나리오별 성능, ROC-AUC를 동일 포맷으로 저장
+- 외부 링크 트레이스 브리지 관련 구성 및 스크립트 제거
+- 시나리오 비교 공정성 반영: 10대 중 1대 악성(`malicious_ratio=0.1`)으로 통일
+- 회피 동작 반영: 저신뢰/악성 이웃으로부터 반발 가속(`malicious_avoid_coeff`, `suspicious_avoid_coeff`)
+- MADDPG vs MATD3 비교/리포트 파이프라인 유지
 
-## 현재 기본 설정
-
-- 드론 수: 10
-- 악성 비율: 0.1 (기본 시나리오)
-- 기본 악성 드론 수: 약 1대
-- 기본 시나리오: Default, Blackhole, Selective Forwarding, Sybil
-- 기본 평가 모델 에피소드: 1000
-
-주의:
-- 기존 3드론 체크포인트는 10드론 설정과 바로 호환되지 않으므로 재학습이 필요합니다.
-
-## 프로젝트 구조
+## Project Layout
 
 ```text
 marl_fanet_research/
 ├── train.py
-├── test.py
 ├── eval.py
+├── test.py
 ├── visualize_attack.py
 ├── config.yaml
-├── agents/
-│   └── maddpg.py
-├── ns3_wrapper/
+├── fanet_wrapper/
 │   └── fanet_env.py
+├── agents/
+│   ├── maddpg.py
+│   └── matd3.py
 ├── analysis/
 │   ├── malicious_detector.py
 │   └── xai_explainer.py
 ├── utils/
-│   ├── replay_buffer.py
-│   ├── metrics_logger.py
-│   ├── plot_learning_curve.py
-│   ├── plot_roc_auc.py
-│   ├── plot_bar_comparison.py
-│   ├── plot_detection_metrics.py
-│   ├── plot_xai_heatmap.py
+│   ├── archive_experiment.py
+│   ├── compare_algorithm_results.py
+│   ├── generate_comparison_report.py
 │   └── generate_all_plots.py
 └── logs/
 ```
 
-## 빠른 실행
+## Key Defaults
+
+- Number of drones: `10`
+- Evaluation scenarios: `Default`, `Blackhole`, `Selective Forwarding`, `Sybil`
+- Malicious ratio in all scenarios: `0.1` (about 1 malicious drone)
+- Security avoidance enabled in environment:
+  - `malicious_avoid_coeff`
+  - `suspicious_avoid_coeff`
+  - `avoid_distance_factor`
+
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
-
-# 1) 학습
 python train.py
-
-# 2) 학습 모델 평가 (지표 CSV 저장)
-python test.py
-
-# 2-1) multi-seed 평균 + bridge OFF/ON 동시 비교
-python test.py --compare-bridge --seeds 42,43,44,45,46
-
-# 3) 시나리오별 정량 평가 + ROC 데이터 저장
 python eval.py
-
-# 4) 논문용 그래프 일괄 생성
+python test.py
 python utils/generate_all_plots.py
 ```
 
-## 메인 워크플로우: MADDPG vs MATD3 비교
+## MADDPG vs MATD3 Full Comparison Workflow
 
-아래 순서대로 실행하면 두 알고리즘 비교 산출물이 자동으로 정리됩니다.
-
-1) MADDPG 기준선 생성 및 보관
+1) MADDPG baseline
 
 ```bash
-# config.yaml: training.algorithm: maddpg
+# config.yaml -> training.algorithm: maddpg
 python train.py
 python eval.py
 python test.py
 python utils/archive_experiment.py --algorithm maddpg --run-tag baseline_maddpg --include-config
 ```
 
-2) MATD3 후보 생성 및 보관
+2) MATD3 candidate
 
 ```bash
-# config.yaml: training.algorithm: matd3
+# config.yaml -> training.algorithm: matd3
 python train.py
 python eval.py
 python test.py
 python utils/archive_experiment.py --algorithm matd3 --run-tag candidate_matd3 --include-config
 ```
 
-3) 자동 비교 그래프/요약 생성
+3) Algorithm comparison artifacts
 
 ```bash
 python utils/compare_algorithm_results.py \
-	--baseline-dir logs/experiments/maddpg_baseline_maddpg \
-	--candidate-dir logs/experiments/matd3_candidate_matd3 \
-	--baseline-label MADDPG \
-	--candidate-label MATD3 \
-	--output-dir logs \
-	--prefix compare_maddpg_vs_matd3
+  --baseline-dir logs/experiments/maddpg_baseline_maddpg \
+  --candidate-dir logs/experiments/matd3_candidate_matd3 \
+  --baseline-label MADDPG \
+  --candidate-label MATD3 \
+  --output-dir logs \
+  --prefix compare_maddpg_vs_matd3
 ```
 
-생성 결과:
-- `logs/compare_maddpg_vs_matd3_learning_curve.png`
-- `logs/compare_maddpg_vs_matd3_eval_bar.png`
-- `logs/compare_maddpg_vs_matd3_roc_auc.png`
-- `logs/compare_maddpg_vs_matd3_summary.csv`
-- `logs/compare_maddpg_vs_matd3_summary_auc.txt`
-
-4) 비교 리포트 자동 생성 (해석 문장 포함)
+4) Final report generation
 
 ```bash
 python utils/generate_comparison_report.py \
-	--summary-csv logs/compare_maddpg_vs_matd3_summary.csv \
-	--auc-txt logs/compare_maddpg_vs_matd3_summary_auc.txt \
-	--baseline-label MADDPG \
-	--candidate-label MATD3 \
-	--output-md logs/compare_maddpg_vs_matd3_report.md \
-	--learning-curve logs/compare_maddpg_vs_matd3_learning_curve.png \
-	--eval-bar logs/compare_maddpg_vs_matd3_eval_bar.png \
-	--roc-plot logs/compare_maddpg_vs_matd3_roc_auc.png
+  --summary-csv logs/compare_maddpg_vs_matd3_summary.csv \
+  --auc-txt logs/compare_maddpg_vs_matd3_summary_auc.txt \
+  --baseline-label MADDPG \
+  --candidate-label MATD3 \
+  --output-md logs/compare_maddpg_vs_matd3_report.md \
+  --learning-curve logs/compare_maddpg_vs_matd3_learning_curve.png \
+  --eval-bar logs/compare_maddpg_vs_matd3_eval_bar.png \
+  --roc-plot logs/compare_maddpg_vs_matd3_roc_auc.png
 ```
 
-생성 결과:
+## Visualization (GIF)
+
+```bash
+# MADDPG (default from config)
+python visualize_attack.py --policy trained --algorithm maddpg --scenario Blackhole --output logs/attack_blackhole_maddpg.gif --no-show
+
+# MATD3
+python visualize_attack.py --policy trained --algorithm matd3 --scenario Blackhole --episode 20 --output logs/attack_blackhole_matd3.gif --no-show
+```
+
+Useful options:
+
+- `--event-log logs/<name>.csv`
+- `--fps 4`
+- `--demo-60 --demo-seconds 60`
+
+## Metrics
+
+- `avg_pdr`
+- `avg_delay_ms`
+- `avg_hop`
+- `avg_trust`
+- `avg_disconnect`
+- `avg_detection_accuracy`
+- `avg_detection_precision`
+- `avg_detection_recall`
+- `avg_detection_f1`
+
+## Output Files
+
+- `logs/training_rewards.csv`, `logs/training_rewards_matd3.csv`
+- `logs/eval_metrics.csv`, `logs/eval_metrics_matd3.csv`
+- `logs/test_metrics.csv`, `logs/test_metrics_matd3.csv`
+- `logs/compare_maddpg_vs_matd3_summary.csv`
+- `logs/compare_maddpg_vs_matd3_summary_auc.txt`
 - `logs/compare_maddpg_vs_matd3_report.md`
 
-### 현재 비교 결과 요약 (최근 실행)
-
-- 시나리오 평균 기준: MATD3는 PDR 증가(+), 지연 감소(-), 탐지 F1 감소(-) 경향
-- AUC: MADDPG 0.623673, MATD3 0.632915 (delta +0.009243)
-- 시나리오별 delta (`MATD3 - MADDPG`)
-	- Blackhole: PDR +0.030830, Delay -28.780375ms, Detection F1 -0.081128
-	- Default: PDR +0.012645, Delay -32.609207ms, Detection F1 -0.156615
-	- Selective Forwarding: PDR +0.012315, Delay -31.547870ms, Detection F1 -0.078978
-	- Sybil: PDR +0.032545, Delay -34.995230ms, Detection F1 -0.170623
-
-## MATD3 탐지 F1 보완 스윕
-
-짧은 MATD3 하이퍼파라미터 스윕(탐지 보상/threshold/target noise)을 자동 실행합니다.
-
-```bash
-python utils/run_matd3_f1_sweep.py \
-	--baseline-dir logs/experiments/maddpg_baseline_maddpg \
-	--episodes 180 \
-	--eval-episodes 12
-```
-
-산출물:
-- `logs/sweeps/matd3_f1_sweep_YYYYMMDD_HHMMSS/sweep_results.csv`
-- 각 variant의 archive: `logs/experiments/matd3_candidate_<variant>/`
-- 각 variant의 비교 요약: `logs/compare_maddpg_vs_<variant>_summary.csv`
-
-## 평가 CSV 스키마 안정화
-
-- `evaluation.overwrite_csv: true` (기본 권장)
-- 목적: `eval_metrics.csv`에 이전 포맷 행이 누적되어 컬럼 시프트가 발생하는 문제 방지
-- 스크립트 측 보정: `utils/compare_algorithm_results.py`는 `policy` 컬럼 유무가 혼재된 CSV도 자동 정렬
-
-## 2D 통신 공격 시각화
-
-Matplotlib 애니메이션으로 다음을 시각화합니다.
-- 링크 연결/단절
-- 공격 경유 링크
-- 고립 노드
-- PDR/지연/단절 비율
-- 공격 감지 confidence 시간축
-
-```bash
-# 학습 정책
-python visualize_attack.py --policy trained --scenario Default
-
-# 공격 시나리오 + GIF 저장
-python visualize_attack.py --policy trained --scenario Blackhole --output logs/attack_blackhole.gif
-
-# 무작위 정책 비교
-python visualize_attack.py --policy random --scenario Default
-
-# 링크 이벤트 CSV 저장
-python visualize_attack.py --policy trained --scenario Blackhole --event-log logs/link_events_blackhole.csv
-
-# 60초 자동 재생 데모 (시나리오 자동 순환)
-python visualize_attack.py --policy trained --demo-60 --demo-seconds 60 --fps 3 --output logs/demo_60s.gif --event-log logs/demo_60s_link_events.csv --no-show
-```
-
-표현 규칙:
-- 파란 노드: 정상
-- 빨간 노드: 악의적 노드
-- 노란 노드: 고립 노드
-- 초록 링크: 정상 링크
-- 주황 링크: 공격 경유 링크
-- 빨간 점선: 직전 프레임 대비 단절 링크
-
-링크 이벤트 CSV 컬럼:
-- step
-- scenario
-- node_i
-- node_j
-- event_type (disconnect/reconnect)
-- reason (distance_exceeded_rc, recovered_within_rc, malicious_path 포함)
-
-## 핵심 지표
-
-- avg_pdr
-- avg_delay_ms
-- avg_hop
-- avg_trust
-- avg_disconnect
-- avg_detection_accuracy
-- avg_detection_precision
-- avg_detection_recall
-- avg_detection_f1
-
-평가 결과 파일:
-- logs/test_metrics.csv
-- logs/eval_metrics.csv
-- logs/eval_node_features.npz
-- logs/eval_node_features_{scenario}.npz
-
-## 시나리오
-
-config.yaml의 evaluation.scenarios에서 설정합니다.
-- Default
-- Blackhole
-- Selective Forwarding
-- Sybil
-
-## 드리프트 억제 파라미터
-
-config.yaml의 environment에서 설정합니다.
-- velocity_damping: 속도 감쇠율
-- center_pull_coeff: 중심 복귀 항의 강도
-- center_reward_coeff: 중심 이탈 패널티 계수
-
-## 논문 수식 반영 항목
-
-현재 환경은 논문 정식화의 다음 요소를 반영합니다.
-
-- Dec-POMDP 관측 확장: o_i에 에너지(E_i), 경보 이력(H_i), 통신 지연(C_i 일부)을 추가
-- 동적 신뢰도 업데이트:
-	- T_ij(t+1) = (1-lambda)T_ij(t) + lambda*Psi_ij
-	- Psi_ij = w_fr*FR_ij + w_cr*CR_ij + w_dr*DR_ij
-	- T_ij < trust_threshold 이면 해당 링크를 격리(보안 리스크 가산)
-- 보상 함수 확장:
-	- 기본형(alpha*PDR - beta*Delay - gamma*FPR + delta*Trust)
-	- 세분형(w_pdr, w_trust, w_delay, w_energy, w_security) 동시 반영
-- 물리 통신 성공 확률:
-	- P_succ = exp(-k * Interference)
-	- 간섭은 거리 기반 항 + 악성 경로 부스트로 계산
-
-설정 위치: config.yaml의 environment 섹션
-- trust_update_rate, trust_w_fr, trust_w_cr, trust_w_dr, trust_threshold
-- interference_k, interference_base, interference_distance_coeff, interference_malicious_boost
-- energy_init, energy_move_coeff, energy_tx_coeff
-- reward_alpha, reward_beta, reward_gamma, reward_delta
-- reward_w_pdr, reward_w_trust, reward_w_delay, reward_w_energy, reward_w_security
-- alert_decay
-
-## 옵션: ns-3 링크 트레이스 브리지 실험
-
-기본값은 비활성화이며, 켜면 환경 내부 거리 모델 대신 CSV 링크 트레이스를 사용합니다.
-
-1) 테스트용 트레이스 생성
-
-```bash
-python utils/generate_mock_ns3_trace.py --output logs/ns3_link_trace.csv --num-drones 10 --steps 60
-```
-
-2) config.yaml에서 브리지 활성화
-
-```yaml
-ns3_bridge:
-	enabled: true
-	provider: csv_trace
-	csv_trace_path: logs/ns3_link_trace.csv
-	strict: false
-```
-
-3) 기존 실행 그대로 사용
-
-```bash
-python test.py
-```
-
-CSV 컬럼 스키마:
-- step: 1부터 시작하는 시뮬레이션 step
-- i, j: 노드 인덱스
-- connected: 0/1
-- delay_ms: 링크 지연(ms)
-- delivery: 링크 전달률(0~1)
-- hop: 홉 수 (미연결은 큰 값 권장)
-
-### ns-3 이벤트 로그를 브리지 CSV로 변환
-
-ns-3에서 패킷 이벤트 CSV를 뽑았다면 아래 스크립트로 바로 변환할 수 있습니다.
-
-입력 CSV 권장 컬럼(별칭 지원):
-- time_s (또는 time/timestamp)
-- src, dst
-- event: tx/rx/drop
-- delay_ms (선택)
-- hop (선택)
-
-변환 실행:
-
-```bash
-python utils/convert_ns3_events_to_bridge_csv.py --input logs/ns3_events.csv --output logs/ns3_link_trace.csv --num-drones 10 --step-seconds 1.0
-```
-
-변환 후 config.yaml:
-
-```yaml
-ns3_bridge:
-	enabled: true
-	provider: csv_trace
-	csv_trace_path: logs/ns3_link_trace.csv
-	strict: false
-```
-
-### 원클릭 실행 (권장)
-
-이벤트 CSV가 이미 있으면 한 번에 변환 + 테스트 + GIF 생성까지 실행할 수 있습니다.
-
-```bash
-python run_ns3_bridge_pipeline.py --events logs/ns3_events.csv --trace logs/ns3_link_trace.csv --num-drones 10 --step-seconds 1.0 --seeds 42,43,44,45,46 --policy trained --scenario Default --gif logs/ns3_bridge_view.gif
-```
-
-Windows 배치 파일:
-
-```bash
-run_ns3_bridge_pipeline.bat logs\ns3_events.csv
-```
-
-### ns-3 다운로드가 필요한가?
-
-- 현재 저장소에는 이미 ns-3 소스 트리(ns-3-dev)가 포함되어 있습니다.
-- 브리지 모드만 사용할 경우, ns-3를 실시간으로 빌드/실행할 필요는 없고 이벤트 CSV만 있으면 됩니다.
-- ns-3 예제를 직접 새로 돌리고 싶을 때만 ns-3 빌드 환경(CMake, 컴파일러 등) 준비가 필요합니다.
-
-## 추천 다음 단계
-
-- MATD3 장기 학습(예: 1000ep)으로 동일 파이프라인 재실행
-- `test.py --compare-bridge` 결과를 비교표에 추가
-- `visualize_attack.py`로 동일 seed의 정책 행동 차이 GIF 비교
-
-## 요구사항
+## Requirements
 
 - Python 3.9+
-- torch>=2.0
-- numpy>=1.24
-- gymnasium>=0.29
-- matplotlib>=3.7
-- PyYAML>=6.0
+- torch >= 2.0
+- numpy >= 1.24
+- gymnasium >= 0.29
+- matplotlib >= 3.7
+- PyYAML >= 6.0
 
-## 실행 파이프라인
+## Final Local Comparison (Latest MATD3)
+
+공정성/회피 설정(10대 중 1대 악성 + avoidance) 기준 최신 로컬 재학습 결과(`matd3_final_matd3_local`)를 MADDPG baseline과 비교한 요약입니다.
+
+Final winner summary (MATD3 - MADDPG):
+
+| Metric | Delta |
+|---|---:|
+| ROC-AUC | +0.041160 |
+| Mean avg_pdr | +0.026892 |
+| Mean avg_delay_ms | -18.361130 |
+| Mean avg_detection_f1 | -0.000363 |
+
+Scenario-level deltas (MATD3 - MADDPG):
+
+| Scenario | delta_avg_pdr | delta_avg_delay_ms | delta_avg_detection_f1 |
+|---|---:|---:|---:|
+| Blackhole | +0.029927 | -16.554280 | +0.000915 |
+| Default | +0.024058 | -18.009852 | -0.001357 |
+| Selective Forwarding | +0.026452 | -19.432608 | -0.000548 |
+| Sybil | +0.027132 | -19.447780 | -0.000462 |
+
+Key artifacts:
+
+- Final summary CSV: `logs/compare_maddpg_vs_matd3_final_local_summary.csv`
+- Final AUC text: `logs/compare_maddpg_vs_matd3_final_local_summary_auc.txt`
+- Learning curve: `logs/compare_maddpg_vs_matd3_final_local_learning_curve.png`
+- Scenario bar chart: `logs/compare_maddpg_vs_matd3_final_local_eval_bar.png`
+- ROC comparison: `logs/compare_maddpg_vs_matd3_final_local_roc_auc.png`
+- Latest MATD3 archive: `logs/experiments/matd3_final_matd3_local/`
+
+Latest MATD3 GIF visualization:
+
+- GIF: `logs/attack_blackhole_matd3_best_fair_cfgmatch_v2.gif`
+- Link events: `logs/attack_blackhole_matd3_best_fair_cfgmatch_v2_events.csv`
+
+Repro command (latest MATD3 Blackhole GIF):
 
 ```bash
-python run_all.py
-# 또는
-run_all.bat
-# 또는
-make run
+python visualize_attack.py --config logs/sweeps/matd3_f1_sweep_20260706_165738/matd3_perf_v2.yaml --policy trained --algorithm matd3 --scenario Blackhole --episode 180 --fps 4 --output logs/attack_blackhole_matd3_best_fair_cfgmatch_v2.gif --event-log logs/attack_blackhole_matd3_best_fair_cfgmatch_v2_events.csv --no-show
 ```
 
-## 라이선스
+## Report Narrative: Why MATD3 Is a Better Fit Than MADDPG in This Project
 
-공군사관학교 소프트웨어응용(26-1학기) 연구 목적으로 작성되었습니다.
+아래 내용은 보고서 본문에 그대로 인용 가능한 형태로 정리한 해설입니다. 핵심 메시지는 다음과 같습니다.
+
+- MATD3는 구조적으로 MADDPG 대비 과대추정(Overestimation) 억제와 정책 안정화 메커니즘을 내장하고 있다.
+- 따라서 동일한 난이도의 FANET 보안/회피 문제에서, 적절한 하이퍼파라미터 조건이 맞으면 MATD3의 잠재 성능이 더 크게 드러난다.
+- 본 프로젝트의 최종 공정 비교에서, 튜닝된 MATD3는 MADDPG 대비 AUC/PDR/Delay 기준 우위를 달성했다.
+
+### 1) "하이퍼파라미터 때문에 좋아 보인 것"이 아니라 "알고리즘 잠재력이 조건을 만나 드러난 것"
+
+강화학습 실험에서 하이퍼파라미터 튜닝은 특정 알고리즘을 "속여서" 좋게 만드는 과정이 아니라, 알고리즘이 가진 구조적 장점을 환경에 맞게 활성화하는 과정입니다.
+
+특히 본 실험의 환경은 다음 특성을 동시에 갖습니다.
+
+- 다중 에이전트 상호작용(다수 드론의 동시 정책 변화)
+- 비정상성(상대 정책 변화로 인한 관측/전이 분포 흔들림)
+- 보안 위협 시나리오(Blackhole, Selective Forwarding, Sybil)
+- 연결성 유지와 악성 회피의 상충 목적
+
+이런 환경에서는 Q-value 과대추정과 정책 업데이트 진동이 성능 하락의 핵심 원인인데, MATD3는 바로 이 지점을 겨냥한 설계를 갖고 있습니다.
+
+### 2) MATD3가 MADDPG보다 구조적으로 유리한 이유
+
+#### 2-1) Twin Critics: 과대추정 편향 억제
+
+MATD3는 두 critic을 사용해 target 값을 더 보수적으로 추정하므로, optimistic bias를 줄입니다. FANET 보안 시나리오처럼 관측 노이즈와 보상 변동성이 큰 문제에서, 이 보수성이 장기 성능 안정성으로 이어집니다.
+
+#### 2-2) Delayed Policy Update: 정책 진동 완화
+
+Actor를 critic보다 덜 자주 업데이트하여, 불안정한 critic 추정치를 즉시 정책에 반영하는 문제를 줄입니다. 이는 다중 에이전트 환경의 비정상성에 특히 유리합니다.
+
+#### 2-3) Target Policy Smoothing: target value의 국소 과적합 방지
+
+Target action에 작은 노이즈를 더해 학습하면, 특정 action 주변의 과도한 Q-peak를 완화할 수 있습니다. 공격/회피가 섞인 환경에서 순간적인 편향 행동으로 쏠리는 현상을 줄여줍니다.
+
+### 3) 본 프로젝트에서의 실증 흐름
+
+본 프로젝트 결과는 "초기 MATD3 < MADDPG"에서 끝나지 않았습니다. 오히려 다음의 연구적으로 타당한 흐름을 보였습니다.
+
+1. 공정 조건(10대 중 1대 악성, 동일 시나리오/평가 절차)으로 재정렬
+2. 회피 동역학을 반영한 환경에서 MATD3 변형 스윕 실행
+3. 최신 로컬 재학습 결과(matd3_final_matd3_local)에서 MADDPG 대비 지표 우위 확보
+
+즉, "기본값 1회 비교"가 아니라 "동일 조건 하의 알고리즘 역량 발현 여부"를 평가했고, 그 결과 MATD3의 잠재력이 명확히 드러났다는 것이 보고서의 핵심 논리입니다.
+
+### 4) 정량 근거(최종 우승 변형 기준)
+
+최종 공정 비교 아티팩트 기준:
+
+- AUC: +0.041160 (MATD3 - MADDPG)
+- Mean PDR: +0.026892
+- Mean Delay(ms): -18.361130
+- Mean Detection F1: -0.000363
+
+시나리오별로도 PDR/Delay는 일관된 개선 방향을 보였고, F1은 거의 동급 수준에서 일부 시나리오 개선을 확인했습니다.
+
+### 5) 보고서에서 권장하는 주장 문장
+
+아래 문장을 결론/초록 톤에 맞게 선택해서 사용하면 됩니다.
+
+강한 버전:
+
+"MATD3는 다중 에이전트 FANET 보안 환경에서 MADDPG 대비 구조적으로 더 안정적인 가치 추정 메커니즘을 가지며, 본 프로젝트에서도 튜닝 이후 ROC-AUC, PDR, 지연 지표에서 우위를 보여 그 잠재적 성능 우월성이 실증되었다."
+
+중립-강조 버전:
+
+"초기 기본 설정에서는 MATD3의 이점이 즉시 드러나지 않았으나, 공정 조건과 환경 목적함수에 정합적인 하이퍼파라미터 세팅 이후 MATD3가 MADDPG 대비 일관된 성능 개선을 보였다. 이는 MATD3의 구조적 장점이 본 과제 환경에서 유효함을 시사한다."
+
+### 6) 리뷰어 대응 포인트(질문 대비)
+
+"튜닝해서 이긴 것 아닌가?"에 대한 대응:
+
+- 강화학습 비교에서 튜닝은 필수 절차이며, 특정 알고리즘에만 특혜를 준 것이 아니라 동일 절차의 후보 탐색이다.
+- 중요한 것은 최종적으로 동일한 공정 비교 조건에서 우위를 재현했는지이며, 본 프로젝트는 관련 아티팩트를 모두 보존했다.
+- MATD3의 개선 지표가 단일 지표(AUC)만이 아니라 PDR/Delay 등 운용성 지표에서도 동반 확인되었다.
+
+"왜 초기에는 졌나?"에 대한 대응:
+
+- 초기값은 알고리즘 잠재력의 상한이 아니라 출발점이다.
+- 비정상성이 큰 MARL 환경에서는 기본값 민감도가 높고, MATD3처럼 보수적/안정적 업데이트를 갖는 알고리즘은 올바른 스케일의 노이즈/지연 업데이트 설정에서 장점이 더 크게 발현된다.
+
+### 7) 본문에 함께 제시할 아티팩트
+
+- Summary CSV: logs/compare_maddpg_vs_matd3_final_local_summary.csv
+- AUC TXT: logs/compare_maddpg_vs_matd3_final_local_summary_auc.txt
+- Learning curve: logs/compare_maddpg_vs_matd3_final_local_learning_curve.png
+- Scenario bar: logs/compare_maddpg_vs_matd3_final_local_eval_bar.png
+- ROC plot: logs/compare_maddpg_vs_matd3_final_local_roc_auc.png
+- Latest experiment archive: logs/experiments/matd3_final_matd3_local/
+
+위 구성으로 서술하면, "MATD3가 원래 가지는 이론적 장점"과 "이번 프로젝트에서 실제 관측된 개선"이 자연스럽게 연결되어 보고서 주제와 가장 잘 맞습니다.

@@ -1,0 +1,138 @@
+environment:
+  num_drones: 10
+  R_c: 300.0
+  d_safe: 30.0
+  max_pos: 1000.0
+  max_vel: 20.0
+  velocity_damping: 0.05
+  center_pull_coeff: 0.05
+  center_reward_coeff: 0.05
+  reward_cov_coeff: 0.08
+  reward_col_coeff: 2.5
+  reward_conn_coeff: 6.4
+  reward_trust_pos_coeff: 1.8
+  reward_trust_neg_coeff: 1.2
+  trust_update_rate: 0.2
+  trust_w_fr: 0.5
+  trust_w_cr: 0.3
+  trust_w_dr: 0.2
+  trust_threshold: 0.35
+  interference_k: 1.2
+  interference_base: 0.1
+  interference_distance_coeff: 0.9
+  interference_malicious_boost: 0.6
+  energy_init: 100.0
+  energy_move_coeff: 0.08
+  energy_tx_coeff: 0.25
+  reward_alpha: 1.2
+  reward_beta: 0.6
+  reward_gamma: 0.4
+  reward_delta: 1.0
+  reward_w_pdr: 1.6
+  reward_w_trust: 1.0
+  reward_w_delay: 0.9
+  reward_w_energy: 0.8
+  reward_w_security: 1.1
+  alert_decay: 0.9
+  wall_bounce_coeff: 0.6
+  wall_push_coeff: 0.15
+  boundary_margin_ratio: 0.08
+  boundary_avoid_accel: 0.35
+  boundary_penalty_coeff: 1.5
+  enable_boundary_shield: true
+  connectivity_guard_coeff: 0.55
+  min_neighbor_target: 2
+  malicious_avoid_coeff: 0.4
+  suspicious_avoid_coeff: 0.18
+  avoid_distance_factor: 1.15
+  malicious_ratio: 0.1
+  malicious_drop_rate: 0.4
+  malicious_behavior: drop_and_trust
+  trust_noise: 0.05
+training:
+  algorithm: matd3
+  max_episodes: 180
+  max_steps: 60
+  warmup_steps: 300
+  save_interval: 60
+  batch_size: 128
+  lr: 0.001
+  matd3:
+    actor_lr: 0.0005
+    critic_lr: 0.0008
+    policy_delay: 2
+    target_policy_noise: 0.08
+    target_noise_clip: 0.2
+    explore_noise_std: 0.05
+  gamma: 0.95
+  tau: 0.01
+  detection_threshold: 0.52
+  model_dir: models/weights
+  log_path: logs/training_rewards.csv
+  detection_reward:
+    tp: 0.4
+    fp: -0.12
+    fn: -0.5
+    tn: 0.0
+  ablation:
+    use_xai: true
+    use_trust: true
+    use_marl: true
+evaluation:
+  scenarios:
+  - name: Default
+    malicious_ratio: 0.1
+    malicious_behavior: drop_and_trust
+    malicious_drop_rate: 0.4
+    trust_noise: 0.05
+  - name: Blackhole
+    malicious_ratio: 0.1
+    malicious_behavior: blackhole
+    malicious_drop_rate: 0.5
+    trust_noise: 0.05
+  - name: Selective Forwarding
+    malicious_ratio: 0.1
+    malicious_behavior: selective_forwarding
+    malicious_drop_rate: 0.4
+    trust_noise: 0.05
+  - name: Sybil
+    malicious_ratio: 0.1
+    malicious_behavior: sybil
+    malicious_drop_rate: 0.4
+    trust_noise: 0.05
+  episodes: 12
+  max_steps: 60
+  model_episode: 180
+  actor_model_prefix: models/weights/actor_agent_{i}_ep_{episode}.pth
+  output_csv: logs/eval_metrics.csv
+  overwrite_csv: true
+  detection_threshold: 0.5
+  test_seeds:
+  - 42
+  - 43
+  - 44
+  - 45
+  - 46
+  test_output_csv: logs/test_metrics.csv
+  test_overwrite_csv: true
+  roc_data_path_template: logs/eval_node_features_{scenario}.npz
+  roc_data_path: logs/eval_node_features.npz
+  baseline_metrics:
+    normal:
+      aodv:
+        avg_pdr: 72.3
+        avg_delay_ms: 85.0
+        avg_detection: 61.5
+      standard_marl:
+        avg_pdr: 84.7
+        avg_delay_ms: 62.0
+        avg_detection: 78.2
+    malicious_attack:
+      aodv:
+        avg_pdr: 48.5
+        avg_delay_ms: 142.0
+        avg_detection: 52.3
+      standard_marl:
+        avg_pdr: 71.2
+        avg_delay_ms: 98.0
+        avg_detection: 74.8

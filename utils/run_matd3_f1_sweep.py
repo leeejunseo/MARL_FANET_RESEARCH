@@ -92,6 +92,48 @@ def main():
             "detection_reward": {"tp": 0.8, "fp": -0.1, "fn": -1.0, "tn": 0.0},
             "detection_threshold": 0.42,
         },
+        {
+            "name": "matd3_perf_v1",
+            "matd3": {
+                "policy_delay": 2,
+                "target_policy_noise": 0.10,
+                "target_noise_clip": 0.25,
+                "explore_noise_std": 0.06,
+                "actor_lr": 0.0007,
+                "critic_lr": 0.0010,
+            },
+            "detection_reward": {"tp": 0.45, "fp": -0.15, "fn": -0.55, "tn": 0.0},
+            "detection_threshold": 0.50,
+            "env_override": {
+                "reward_conn_coeff": 6.0,
+                "reward_w_delay": 1.0,
+                "reward_w_security": 1.2,
+                "connectivity_guard_coeff": 0.50,
+                "malicious_avoid_coeff": 0.45,
+                "suspicious_avoid_coeff": 0.20,
+            },
+        },
+        {
+            "name": "matd3_perf_v2",
+            "matd3": {
+                "policy_delay": 2,
+                "target_policy_noise": 0.08,
+                "target_noise_clip": 0.20,
+                "explore_noise_std": 0.05,
+                "actor_lr": 0.0005,
+                "critic_lr": 0.0008,
+            },
+            "detection_reward": {"tp": 0.40, "fp": -0.12, "fn": -0.50, "tn": 0.0},
+            "detection_threshold": 0.52,
+            "env_override": {
+                "reward_conn_coeff": 6.4,
+                "reward_w_delay": 0.9,
+                "reward_w_security": 1.1,
+                "connectivity_guard_coeff": 0.55,
+                "malicious_avoid_coeff": 0.40,
+                "suspicious_avoid_coeff": 0.18,
+            },
+        },
     ]
 
     result_rows = []
@@ -106,6 +148,8 @@ def main():
         cfg["training"]["detection_threshold"] = var["detection_threshold"]
         cfg["training"]["detection_reward"] = var["detection_reward"]
         cfg["training"]["matd3"].update(var["matd3"])
+        if var.get("env_override"):
+            cfg["environment"].update(var["env_override"])
 
         cfg["evaluation"]["model_episode"] = args.episodes
         cfg["evaluation"]["episodes"] = args.eval_episodes

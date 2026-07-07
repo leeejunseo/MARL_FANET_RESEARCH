@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 
-from ns3_wrapper.fanet_env import AdvancedFANETEnv
+from fanet_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
 from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
@@ -11,7 +11,6 @@ from utils.config import load_config
 from utils.metrics_logger import EvalMetricsLogger
 from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
 from utils.algorithm import normalize_algorithm, display_algorithm, resolve_actor_prefix, resolve_file_path
-from ns3_wrapper.provider_factory import build_link_provider
 
 
 def apply_ablation_obs(obs, ablation_cfg):
@@ -196,7 +195,6 @@ def main():
 
     for scenario in scenarios:
         print(f"\n--- 시나리오: {scenario['name']} ({scenario['malicious_behavior']}) ---")
-        link_provider = build_link_provider(config, env_cfg["num_drones"])
         env = AdvancedFANETEnv(
             num_drones=env_cfg["num_drones"],
             R_c=env_cfg["R_c"],
@@ -238,8 +236,10 @@ def main():
             reward_w_security=env_cfg.get("reward_w_security", 1.2),
             connectivity_guard_coeff=env_cfg.get("connectivity_guard_coeff", 0.35),
             min_neighbor_target=env_cfg.get("min_neighbor_target", 2),
+            malicious_avoid_coeff=env_cfg.get("malicious_avoid_coeff", 0.65),
+            suspicious_avoid_coeff=env_cfg.get("suspicious_avoid_coeff", 0.35),
+            avoid_distance_factor=env_cfg.get("avoid_distance_factor", 1.15),
             alert_decay=env_cfg.get("alert_decay", 0.9),
-            link_provider=link_provider,
         )
         agents = load_agents(env, config)
 

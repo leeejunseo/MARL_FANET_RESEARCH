@@ -2,14 +2,12 @@ import argparse
 import csv
 import glob
 import os
-from copy import deepcopy
 
 import torch
 
 from agents.maddpg import MADDPGAgent
 from analysis.malicious_detector import MaliciousNodeDetector
-from ns3_wrapper.fanet_env import AdvancedFANETEnv
-from ns3_wrapper.provider_factory import build_link_provider
+from fanet_wrapper.fanet_env import AdvancedFANETEnv
 from test import evaluate_policy_episode, infer_actor_obs_dim_from_checkpoint
 from utils.config import load_config
 
@@ -17,7 +15,6 @@ from utils.config import load_config
 def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark checkpoints and select best model episode.")
     parser.add_argument("--seeds", type=str, default="42,43,44,45,46")
-    parser.add_argument("--bridge", choices=["off", "on"], default="off")
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--output", type=str, default="logs/checkpoint_benchmark.csv")
     return parser.parse_args()
@@ -48,7 +45,6 @@ def discover_episodes(prefix):
 
 def build_env(config):
     env_cfg = config["environment"]
-    provider = build_link_provider(config, env_cfg["num_drones"])
     env = AdvancedFANETEnv(
         num_drones=env_cfg["num_drones"],
         R_c=env_cfg["R_c"],
@@ -66,7 +62,11 @@ def build_env(config):
         reward_conn_coeff=env_cfg.get("reward_conn_coeff", 4.0),
         reward_trust_pos_coeff=env_cfg.get("reward_trust_pos_coeff", 1.2),
         reward_trust_neg_coeff=env_cfg.get("reward_trust_neg_coeff", 0.8),
-        link_provider=provider,
+        connectivity_guard_coeff=env_cfg.get("connectivity_guard_coeff", 0.35),
+        min_neighbor_target=env_cfg.get("min_neighbor_target", 2),
+        malicious_avoid_coeff=env_cfg.get("malicious_avoid_coeff", 0.65),
+        suspicious_avoid_coeff=env_cfg.get("suspicious_avoid_coeff", 0.35),
+        avoid_distance_factor=env_cfg.get("avoid_distance_factor", 1.15),
     )
     return env
 
@@ -99,17 +99,13 @@ def main():
     eval_cfg = config["evaluation"]
     actor_prefix = eval_cfg["actor_model_prefix"]
 
-    cfg_local = deepcopy(config)
-    cfg_local.setdefault("ns3_bridge", {})
-    cfg_local["ns3_bridge"]["enabled"] = args.bridge == "on"
-
     seeds = parse_seeds(args.seeds)
     max_steps = args.max_steps if args.max_steps is not None else eval_cfg["max_steps"]
     episodes = discover_episodes(actor_prefix)
     if not episodes:
         raise RuntimeError("No actor checkpoints found for benchmarking.")
 
-    env = build_env(cfg_local)
+    env = build_env(config)
     detector = MaliciousNodeDetector()
 
     random_runs = [
@@ -138,7 +134,7 @@ def main():
 
         row = {
             "episode": ep,
-            "bridge": args.bridge,
+            "mode": "distance_model",
             "seeds": args.seeds,
             "trained_reward": trained_reward,
             "random_reward": random_reward,
@@ -168,7 +164,7 @@ def main():
             f,
             fieldnames=[
                 "episode",
-                "bridge",
+                "mode",
                 "seeds",
                 "trained_reward",
                 "random_reward",
@@ -188,7 +184,7 @@ def main():
         writer.writerows(rows)
 
     print(f"Saved benchmark: {args.output}")
-    print(f"Best episode ({args.bridge}): {best_row['episode']}")
+    print(f"Best episode: {best_row['episode']}")
     print(
         "reward_gain={:.2f}, pdr_gain={:.4f}, delay_gain_ms={:.2f}, trust_gain={:.4f}".format(
             best_row["reward_gain"],

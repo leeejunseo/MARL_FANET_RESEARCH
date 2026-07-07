@@ -3,7 +3,7 @@ import copy
 import os
 import numpy as np
 import torch
-from ns3_wrapper.fanet_env import AdvancedFANETEnv
+from fanet_wrapper.fanet_env import AdvancedFANETEnv
 from agents.maddpg import MADDPGAgent
 from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
@@ -11,7 +11,6 @@ from utils.metrics_logger import EvalMetricsLogger
 from utils.config import load_config
 from utils.model_metrics import accuracy_score, precision_score, recall_score, f1_score
 from utils.algorithm import normalize_algorithm, display_algorithm, resolve_actor_prefix, resolve_file_path
-from ns3_wrapper.provider_factory import build_link_provider
 
 
 def infer_actor_obs_dim_from_checkpoint(path):
@@ -107,8 +106,6 @@ def evaluate_policy_episode(env, action_policy, max_steps, detector=None, seed=4
 def parse_args():
     parser = argparse.ArgumentParser(description="Policy benchmark with multi-seed averaging.")
     parser.add_argument("--seeds", type=str, default=None, help="Comma-separated seeds. e.g., 42,43,44")
-    parser.add_argument("--compare-bridge", action="store_true", help="Evaluate both bridge OFF and ON.")
-    parser.add_argument("--bridge-only", choices=["on", "off"], default=None, help="Force one bridge mode.")
     parser.add_argument("--max-steps", type=int, default=None)
     return parser.parse_args()
 
@@ -151,7 +148,6 @@ def average_stats(stats_list):
 def build_env_from_config(config):
     env_cfg = config["environment"]
     num_drones = env_cfg["num_drones"]
-    link_provider = build_link_provider(config, num_drones)
     env = AdvancedFANETEnv(
         num_drones=num_drones,
         R_c=env_cfg["R_c"],
@@ -192,8 +188,10 @@ def build_env_from_config(config):
         reward_w_security=env_cfg.get("reward_w_security", 1.2),
         connectivity_guard_coeff=env_cfg.get("connectivity_guard_coeff", 0.35),
         min_neighbor_target=env_cfg.get("min_neighbor_target", 2),
+        malicious_avoid_coeff=env_cfg.get("malicious_avoid_coeff", 0.65),
+        suspicious_avoid_coeff=env_cfg.get("suspicious_avoid_coeff", 0.35),
+        avoid_distance_factor=env_cfg.get("avoid_distance_factor", 1.15),
         alert_decay=env_cfg.get("alert_decay", 0.9),
-        link_provider=link_provider,
     )
     return env
 
@@ -242,7 +240,6 @@ def load_trained_agents(env, config):
 def test_inference():
     args = parse_args()
     config = load_config()
-    env_cfg = config["environment"]
     eval_cfg = config["evaluation"]
     algorithm = normalize_algorithm(config.get("training", {}).get("algorithm", "maddpg"))
     policy_label = display_algorithm(algorithm)
@@ -250,84 +247,59 @@ def test_inference():
     seeds = parse_seed_list(args.seeds, default_seeds)
     max_steps = args.max_steps if args.max_steps is not None else eval_cfg["max_steps"]
 
-    compare_bridge = args.compare_bridge or eval_cfg.get("test_compare_bridge", True)
-    if args.bridge_only is not None:
-        compare_bridge = False
-
-    bridge_modes = []
-    if args.bridge_only == "on":
-        bridge_modes = [True]
-    elif args.bridge_only == "off":
-        bridge_modes = [False]
-    elif compare_bridge:
-        bridge_modes = [False, True]
-    else:
-        bridge_modes = [config.get("ns3_bridge", {}).get("enabled", False)]
-
     logger_path = resolve_file_path(eval_cfg.get("test_output_csv", "logs/test_metrics.csv"), algorithm)
     logger = EvalMetricsLogger(logger_path, overwrite=eval_cfg.get("test_overwrite_csv", True))
 
     print(f"=== {policy_label} 기반 전술 기동 평가 시작 ===")
-    print(f"seeds={seeds} | max_steps={max_steps} | bridge_modes={bridge_modes}")
+    print(f"seeds={seeds} | max_steps={max_steps}")
 
     detector = MaliciousNodeDetector()
     row_id = 1
-    for bridge_enabled in bridge_modes:
-        cfg_local = copy.deepcopy(config)
-        cfg_local.setdefault("ns3_bridge", {})
-        cfg_local["ns3_bridge"]["enabled"] = bridge_enabled
+    cfg_local = copy.deepcopy(config)
+    env = build_env_from_config(cfg_local)
+    agents = load_trained_agents(env, cfg_local)
+    print(f"\n[모드] distance_model | model_ep={eval_cfg['model_episode']}")
 
-        try:
-            env = build_env_from_config(cfg_local)
-        except Exception as exc:
-            print(f"[건너뜀] bridge={bridge_enabled} 환경 구성 실패: {exc}")
-            continue
-
-        agents = load_trained_agents(env, cfg_local)
-        print(
-            f"\n[모드] bridge={bridge_enabled} | model_ep={eval_cfg['model_episode']} | link_source={cfg_local['ns3_bridge'].get('provider', 'distance_model') if bridge_enabled else 'distance_model'}"
+    trained_runs = []
+    random_runs = []
+    for seed in seeds:
+        trained_stats = evaluate_policy_episode(
+            env,
+            agents,
+            max_steps,
+            detector=detector,
+            seed=seed,
+        )
+        random_stats = evaluate_policy_episode(
+            env,
+            "random",
+            max_steps,
+            detector=detector,
+            seed=seed,
         )
 
-        trained_runs = []
-        random_runs = []
-        for seed in seeds:
-            trained_stats = evaluate_policy_episode(
-                env,
-                agents,
-                max_steps,
-                detector=detector,
-                seed=seed,
-            )
-            random_stats = evaluate_policy_episode(
-                env,
-                "random",
-                max_steps,
-                detector=detector,
-                seed=seed,
-            )
+        trained_runs.append(trained_stats)
+        random_runs.append(random_stats)
+        logger.log_episode(row_id, trained_stats, scenario=f"Default|seed={seed}", policy=policy_label)
+        row_id += 1
+        logger.log_episode(row_id, random_stats, scenario=f"Default|seed={seed}", policy="Random")
+        row_id += 1
 
-            trained_runs.append(trained_stats)
-            random_runs.append(random_stats)
-            logger.log_episode(row_id, trained_stats, scenario=f"Default|bridge={bridge_enabled}|seed={seed}", policy=policy_label)
-            row_id += 1
-            logger.log_episode(row_id, random_stats, scenario=f"Default|bridge={bridge_enabled}|seed={seed}", policy="Random")
-            row_id += 1
+    trained_avg = average_stats(trained_runs)
+    random_avg = average_stats(random_runs)
 
-        trained_avg = average_stats(trained_runs)
-        random_avg = average_stats(random_runs)
+    improvement = {
+        "reward_gain": trained_avg.get("total_reward", 0.0) - random_avg.get("total_reward", 0.0),
+        "pdr_gain": trained_avg.get("avg_pdr", 0.0) - random_avg.get("avg_pdr", 0.0),
+        "delay_gain": random_avg.get("avg_delay_ms", 0.0) - trained_avg.get("avg_delay_ms", 0.0),
+        "trust_gain": trained_avg.get("avg_trust", 0.0) - random_avg.get("avg_trust", 0.0),
+    }
 
-        improvement = {
-            "reward_gain": trained_avg.get("total_reward", 0.0) - random_avg.get("total_reward", 0.0),
-            "pdr_gain": trained_avg.get("avg_pdr", 0.0) - random_avg.get("avg_pdr", 0.0),
-            "delay_gain": random_avg.get("avg_delay_ms", 0.0) - trained_avg.get("avg_delay_ms", 0.0),
-            "trust_gain": trained_avg.get("avg_trust", 0.0) - random_avg.get("avg_trust", 0.0),
-        }
-
-        print("=== 학습된 정책 vs 무작위 정책 평균 비교 ===")
-        print(f"총 보상 차이: {improvement['reward_gain']:.2f}")
-        print(f"PDR 차이: {improvement['pdr_gain']:.3f}")
-        print(f"지연 감소: {improvement['delay_gain']:.2f} ms")
-        print(f"평균 신뢰도 차이: {improvement['trust_gain']:.3f}")
+    print("=== 학습된 정책 vs 무작위 정책 평균 비교 ===")
+    print(f"총 보상 차이: {improvement['reward_gain']:.2f}")
+    print(f"PDR 차이: {improvement['pdr_gain']:.3f}")
+    print(f"지연 감소: {improvement['delay_gain']:.2f} ms")
+    print(f"평균 신뢰도 차이: {improvement['trust_gain']:.3f}")
 
     print("\n=== 평가 종료 ===")
     print(f"  테스트 메트릭 CSV: {logger_path}")

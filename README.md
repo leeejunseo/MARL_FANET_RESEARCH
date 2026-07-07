@@ -34,6 +34,28 @@ marl_fanet_research/
 └── logs/
 ```
 
+역할 설명:
+
+- `train.py`: 학습 진입점. `config.yaml` 설정을 읽어 알고리즘(MADDPG/MATD3) 학습을 수행하고 보상/체크포인트를 저장합니다.
+- `eval.py`: 평가 진입점. 학습된 정책을 시나리오별로 실행해 성능 지표를 수집합니다.
+- `test.py`: 테스트 진입점. 재현 가능한 조건에서 성능/안정성 검증을 수행하고 테스트 지표를 저장합니다.
+- `visualize_attack.py`: 공격 시나리오(예: Blackhole)에서 스웜 동작을 시각화(GIF/이벤트 로그)합니다.
+- `config.yaml`: 실험 공통 설정 파일(환경, 학습 하이퍼파라미터, 알고리즘 선택, 로그/출력 경로).
+- `fanet_wrapper/`: FANET 시뮬레이션 환경 래퍼 패키지입니다.
+- `fanet_wrapper/fanet_env.py`: 드론 상태, 링크, 공격 시나리오, 보상 계산을 포함한 핵심 환경 구현입니다.
+- `agents/`: 강화학습 에이전트 구현 모음입니다.
+- `agents/maddpg.py`: MADDPG 에이전트(Actor/Critic, 업데이트 로직) 구현입니다.
+- `agents/matd3.py`: MATD3 에이전트(Twin Critic, Delayed Update, Smoothing) 구현입니다.
+- `analysis/`: 보안 분석/XAI 후처리 모듈입니다.
+- `analysis/malicious_detector.py`: 악성 노드 탐지 로직과 관련 지표 계산을 담당합니다.
+- `analysis/xai_explainer.py`: 정책/탐지 결과에 대한 해석용 특징 중요도/설명 출력을 담당합니다.
+- `utils/`: 실험 관리, 결과 비교, 리포트/플롯 생성 유틸리티입니다.
+- `utils/archive_experiment.py`: 실행 결과를 실험 폴더로 아카이빙(설정 포함 옵션 지원)합니다.
+- `utils/compare_algorithm_results.py`: MADDPG vs MATD3 결과를 통계적으로 비교해 요약 CSV/AUC 파일을 생성합니다.
+- `utils/generate_comparison_report.py`: 비교 결과를 바탕으로 최종 Markdown 리포트를 생성합니다.
+- `utils/generate_all_plots.py`: 학습곡선/막대그래프/ROC 등 주요 그림을 일괄 생성합니다.
+- `logs/`: 학습/평가/테스트 산출물(CSV, PNG, GIF, 비교 리포트, 실험 아카이브) 저장 디렉터리입니다.
+
 ## Key Defaults
 
 - Number of drones: `10`

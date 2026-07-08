@@ -1,0 +1,8 @@
+metric,MADDPG,MATD3,delta_candidate_minus_baseline
+mean_q_overestimation_gap,4.190252,1.000809,-3.189444
+tail50_q_overestimation_gap,4.190252,1.000809,-3.189444
+mean_q_abs_td_error,12.779785,10.591883,-2.187902
+tail50_q_abs_td_error,12.779785,10.591883,-2.187902
+mean_q_disagreement,,9.901109,
+tail50_q_disagreement,,9.901109,
+mean_actor_update_ratio,,,

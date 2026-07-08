@@ -1,0 +1,14 @@
+Q-value comparison summary
+
+Baseline=MADDPG
+Candidate=MATD3
+
+MADDPG tail50 q_overestimation_gap: 4.190252
+MATD3 tail50 q_overestimation_gap: 1.000809
+delta (candidate - baseline): -3.189444
+interpretation: lower q_overestimation_gap is better (closer to conservative value estimation).
+
+MADDPG tail50 q_abs_td_error: 12.779785
+MATD3 tail50 q_abs_td_error: 10.591883
+delta (candidate - baseline): -2.187902
+interpretation: lower q_abs_td_error is better (better Bellman consistency).

@@ -144,6 +144,26 @@ class MADDPGAgent:
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
+        with torch.no_grad():
+            q_current_mean = float(current_Q.mean().item())
+            q_target_mean = float(y.mean().item())
+            q_overestimation_gap = q_current_mean - q_target_mean
+            q_abs_td_error = float(torch.abs(current_Q - y).mean().item())
+
+        return {
+            "q_current_mean": q_current_mean,
+            "q_target_mean": q_target_mean,
+            "q_overestimation_gap": q_overestimation_gap,
+            "q_abs_td_error": q_abs_td_error,
+            "q1_current_mean": q_current_mean,
+            "q2_current_mean": None,
+            "q_disagreement_mean": None,
+            "critic_loss1": float(critic_loss.item()),
+            "critic_loss2": None,
+            "actor_loss": float(actor_loss.item()),
+            "actor_updated": 1.0,
+        }
+
     def save_models(self, path, episode):
         """학습된 액터와 크리틱 네트워크의 가중치를 .pth 파일로 저장합니다."""
         os.makedirs(path, exist_ok=True)

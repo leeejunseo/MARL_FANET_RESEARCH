@@ -66,6 +66,64 @@ class MetricsLogger:
         return np.array(episodes), np.array(rewards)
 
 
+class QMetricsLogger:
+    def __init__(self, filepath="logs/training_q_values.csv"):
+        self.filepath = filepath
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        if not os.path.exists(filepath):
+            with open(filepath, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "episode",
+                    "algorithm",
+                    "q_current_mean",
+                    "q_target_mean",
+                    "q_overestimation_gap",
+                    "q_abs_td_error",
+                    "q1_current_mean",
+                    "q2_current_mean",
+                    "q_disagreement_mean",
+                    "critic_loss1_mean",
+                    "critic_loss2_mean",
+                    "actor_loss_mean",
+                    "actor_update_ratio",
+                ])
+
+    def log_episode(
+        self,
+        episode,
+        algorithm,
+        q_current_mean=None,
+        q_target_mean=None,
+        q_overestimation_gap=None,
+        q_abs_td_error=None,
+        q1_current_mean=None,
+        q2_current_mean=None,
+        q_disagreement_mean=None,
+        critic_loss1_mean=None,
+        critic_loss2_mean=None,
+        actor_loss_mean=None,
+        actor_update_ratio=None,
+    ):
+        with open(self.filepath, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                episode,
+                algorithm,
+                f"{q_current_mean:.6f}" if q_current_mean is not None else "",
+                f"{q_target_mean:.6f}" if q_target_mean is not None else "",
+                f"{q_overestimation_gap:.6f}" if q_overestimation_gap is not None else "",
+                f"{q_abs_td_error:.6f}" if q_abs_td_error is not None else "",
+                f"{q1_current_mean:.6f}" if q1_current_mean is not None else "",
+                f"{q2_current_mean:.6f}" if q2_current_mean is not None else "",
+                f"{q_disagreement_mean:.6f}" if q_disagreement_mean is not None else "",
+                f"{critic_loss1_mean:.6f}" if critic_loss1_mean is not None else "",
+                f"{critic_loss2_mean:.6f}" if critic_loss2_mean is not None else "",
+                f"{actor_loss_mean:.6f}" if actor_loss_mean is not None else "",
+                f"{actor_update_ratio:.6f}" if actor_update_ratio is not None else "",
+            ])
+
+
 class EvalMetricsLogger:
     def __init__(self, filepath="logs/eval_metrics.csv", overwrite=False):
         self.filepath = filepath

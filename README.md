@@ -133,11 +133,40 @@ python visualize_attack.py --policy trained --algorithm matd3 --scenario Blackho
 ## 출력 파일
 
 - `logs/training_rewards.csv`, `logs/training_rewards_matd3.csv`
+- `logs/training_q_values.csv`, `logs/training_q_values_matd3.csv`
 - `logs/eval_metrics.csv`, `logs/eval_metrics_matd3.csv`
 - `logs/test_metrics.csv`, `logs/test_metrics_matd3.csv`
 - `logs/compare_maddpg_vs_matd3_summary.csv`
 - `logs/compare_maddpg_vs_matd3_summary_auc.txt`
 - `logs/compare_maddpg_vs_matd3_report.md`
+
+## Q값 과대평가 비교 (MADDPG vs MATD3)
+
+학습 시 각 에피소드별로 Q 통계가 자동 저장됩니다.
+
+- `q_current_mean`: 현재 critic의 평균 Q
+- `q_target_mean`: 타깃 Bellman 값의 평균 Q
+- `q_overestimation_gap`: `q_current_mean - q_target_mean` (양수로 클수록 과대평가 경향)
+- `q_abs_td_error`: `|Q - y|` 평균
+- `q_disagreement_mean` (MATD3): twin critic 간 차이 평균
+
+Q 비교 리포트 생성:
+
+```bash
+python utils/compare_q_values.py \
+  --baseline-dir logs/experiments/maddpg_baseline_maddpg \
+  --candidate-dir logs/experiments/matd3_candidate_matd3 \
+  --baseline-label MADDPG \
+  --candidate-label MATD3 \
+  --output-dir logs \
+  --prefix compare_maddpg_vs_matd3_q
+```
+
+생성 산출물:
+
+- `logs/compare_maddpg_vs_matd3_q_summary.csv`
+- `logs/compare_maddpg_vs_matd3_q_summary.txt`
+- `logs/compare_maddpg_vs_matd3_q_gap_curve.png`
 
 ## 요구 사항
 
@@ -170,6 +199,28 @@ python visualize_attack.py --policy trained --algorithm matd3 --scenario Blackho
 | Selective Forwarding | +0.026452 | -19.432608 | -0.000548 |
 | Sybil | +0.027132 | -19.447780 | -0.000462 |
 
+### Q값 근거: MATD3 과대평가 억제 검증
+
+본 연구에서는 MADDPG와 MATD3의 성능 차이를 최종 보상뿐 아니라 가치함수 추정 안정성 관점에서 추가 검증했습니다. 특히 MATD3의 핵심 장점으로 알려진 Q값 과대평가 억제 효과를 확인하기 위해, 학습 완료된 체크포인트를 기준으로 Q 통계를 추출해 비교했습니다.
+
+비교 지표는 아래를 사용했습니다.
+
+- `q_overestimation_gap` = 현재 Q - 타깃 Q
+- `q_abs_td_error` = |Q - y|
+
+일반적으로 `q_overestimation_gap`이 작을수록 과대평가 편향이 낮고, `q_abs_td_error`가 작을수록 Bellman 일관성이 높다고 해석할 수 있습니다.
+
+최종 Q 비교 결과(`compare_maddpg_vs_matd3_q_final_local_summary.txt`)는 다음과 같습니다.
+
+- MADDPG `tail50 q_overestimation_gap`: `4.190252`
+- MATD3 `tail50 q_overestimation_gap`: `1.000809`
+- 차이(MATD3 - MADDPG): `-3.189444`
+- MADDPG `tail50 q_abs_td_error`: `12.779785`
+- MATD3 `tail50 q_abs_td_error`: `10.591883`
+- 차이(MATD3 - MADDPG): `-2.187902`
+
+즉, MATD3는 본 FANET 다중 에이전트 보안 환경에서 MADDPG 대비 Q값 과대평가를 더 효과적으로 억제했고, 가치 추정 오차도 더 안정적으로 유지했습니다. 이는 MATD3의 성능 우위가 단순한 지표 변동이 아니라, 이중 크리틱 기반의 보수적 타깃 추정이라는 구조적 장점과 정합적임을 뒷받침합니다.
+
 핵심 산출물:
 
 - 최종 요약 CSV: `logs/compare_maddpg_vs_matd3_final_local_summary.csv`
@@ -178,6 +229,9 @@ python visualize_attack.py --policy trained --algorithm matd3 --scenario Blackho
 - 시나리오 막대그래프: `logs/compare_maddpg_vs_matd3_final_local_eval_bar.png`
 - ROC 비교 그래프: `logs/compare_maddpg_vs_matd3_final_local_roc_auc.png`
 - 최신 MATD3 아카이브: `logs/experiments/matd3_final_matd3_local/`
+- Q 비교 요약 CSV: `logs/compare_maddpg_vs_matd3_q_final_local_summary.csv`
+- Q 비교 요약 TXT: `logs/compare_maddpg_vs_matd3_q_final_local_summary.txt`
+- Q gap 곡선: `logs/compare_maddpg_vs_matd3_q_final_local_gap_curve.png`
 
 최신 MATD3 GIF 시각화:
 

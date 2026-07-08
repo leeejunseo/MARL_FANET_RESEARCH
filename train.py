@@ -6,7 +6,7 @@ from agents.maddpg import MADDPGAgent
 from agents.matd3 import MATD3Agent
 from analysis.malicious_detector import MaliciousNodeDetector
 from utils.replay_buffer import ReplayBuffer
-from utils.metrics_logger import MetricsLogger
+from utils.metrics_logger import MetricsLogger, QMetricsLogger
 from utils.config import load_config
 from utils.algorithm import normalize_algorithm, display_algorithm, resolve_model_dir, resolve_file_path
 
@@ -21,6 +21,34 @@ def apply_ablation_obs(obs, ablation_cfg):
     elif not ablation_cfg.get("use_trust", True):
         obs_out[:, 6] = 0.5
     return obs_out
+
+
+def mean_or_none(values):
+    return float(np.mean(values)) if values else None
+
+
+def aggregate_q_stats(stats_list):
+    if not stats_list:
+        return {}
+
+    keys = [
+        "q_current_mean",
+        "q_target_mean",
+        "q_overestimation_gap",
+        "q_abs_td_error",
+        "q1_current_mean",
+        "q2_current_mean",
+        "q_disagreement_mean",
+        "critic_loss1",
+        "critic_loss2",
+        "actor_loss",
+        "actor_updated",
+    ]
+    out = {}
+    for key in keys:
+        valid = [item[key] for item in stats_list if item.get(key) is not None]
+        out[key] = mean_or_none(valid)
+    return out
 
 
 def main():
@@ -124,7 +152,13 @@ def main():
     
     global_step = 0
     model_dir = resolve_model_dir(training_cfg["model_dir"], algorithm)
-    metrics_logger = MetricsLogger(resolve_file_path(training_cfg["log_path"], algorithm))
+    training_log_path = resolve_file_path(training_cfg["log_path"], algorithm)
+    metrics_logger = MetricsLogger(training_log_path)
+    q_log_base = training_cfg.get("q_log_path")
+    if not q_log_base:
+        root, ext = os.path.splitext(training_cfg["log_path"])
+        q_log_base = f"{root}_q_values{ext}"
+    q_metrics_logger = QMetricsLogger(resolve_file_path(q_log_base, algorithm))
     
     print("\n[알림] 대규모 데이터 수집 및 인공지능 최적화 시작...")
     
@@ -138,6 +172,7 @@ def main():
         trust_values = []
         disconnect_values = []
         detection_rates = []
+        q_stats_per_episode = []
 
         for step in range(max_steps):
             global_step += 1
@@ -192,7 +227,9 @@ def main():
             if global_step >= warmup_steps and replay_buffer.size >= batch_size:
                 sample_data = replay_buffer.sample(batch_size)
                 for agent in agents:
-                    agent.update(sample_data, agents, gamma=gamma, tau=tau)
+                    q_stats = agent.update(sample_data, agents, gamma=gamma, tau=tau)
+                    if q_stats:
+                        q_stats_per_episode.append(q_stats)
                     
             if terminated:
                 break
@@ -203,6 +240,7 @@ def main():
         avg_trust = float(np.mean(trust_values)) if trust_values else 0.0
         avg_disconnect = float(np.mean(disconnect_values)) if disconnect_values else 0.0
         avg_detection = float(np.mean(detection_rates)) if detection_rates else None
+        q_episode = aggregate_q_stats(q_stats_per_episode)
 
         metrics_logger.log_episode(
             episode,
@@ -216,9 +254,30 @@ def main():
             avg_detection=avg_detection,
         )
 
+        q_metrics_logger.log_episode(
+            episode,
+            display_algorithm(algorithm),
+            q_current_mean=q_episode.get("q_current_mean"),
+            q_target_mean=q_episode.get("q_target_mean"),
+            q_overestimation_gap=q_episode.get("q_overestimation_gap"),
+            q_abs_td_error=q_episode.get("q_abs_td_error"),
+            q1_current_mean=q_episode.get("q1_current_mean"),
+            q2_current_mean=q_episode.get("q2_current_mean"),
+            q_disagreement_mean=q_episode.get("q_disagreement_mean"),
+            critic_loss1_mean=q_episode.get("critic_loss1"),
+            critic_loss2_mean=q_episode.get("critic_loss2"),
+            actor_loss_mean=q_episode.get("actor_loss"),
+            actor_update_ratio=q_episode.get("actor_updated"),
+        )
+
         # 로그 출력 (10 에피소드마다)
         if episode % 10 == 0 or episode == 1:
-            print(f"에피소드 {episode:04d} | 총 전술 보상 합계: {episode_reward:7.2f} | 버퍼 크기: {replay_buffer.size:6d}")
+            q_gap = q_episode.get("q_overestimation_gap")
+            q_gap_text = f"{q_gap:+.4f}" if q_gap is not None else "N/A"
+            print(
+                f"에피소드 {episode:04d} | 총 전술 보상 합계: {episode_reward:7.2f} "
+                f"| 버퍼 크기: {replay_buffer.size:6d} | Q-gap(current-target): {q_gap_text}"
+            )
             
         # 지정된 주기마다 모델 저장
         if episode % save_interval == 0:

@@ -158,30 +158,56 @@ class MATD3Agent:
         critic_loss2.backward()
         self.critic2_optimizer.step()
 
-        if self.update_step % self.policy_delay != 0:
-            return
+        actor_loss_value = None
+        actor_updated = 0.0
+        if self.update_step % self.policy_delay == 0:
+            if self.use_marl:
+                eval_actions = actions_t.clone()
+                eval_actions[:, self.agent_id] = self.actor(self._prepare_actor_obs(obs_t[:, self.agent_id]))
+                eval_actions_flat = eval_actions.view(batch_size, -1)
+                actor_loss = -self.critic1(states_t, eval_actions_flat).mean()
+            else:
+                local_obs = self._prepare_actor_obs(obs_t[:, self.agent_id])
+                actor_loss = -self.critic1(local_obs, self.actor(local_obs)).mean()
 
-        if self.use_marl:
-            eval_actions = actions_t.clone()
-            eval_actions[:, self.agent_id] = self.actor(self._prepare_actor_obs(obs_t[:, self.agent_id]))
-            eval_actions_flat = eval_actions.view(batch_size, -1)
-            actor_loss = -self.critic1(states_t, eval_actions_flat).mean()
-        else:
-            local_obs = self._prepare_actor_obs(obs_t[:, self.agent_id])
-            actor_loss = -self.critic1(local_obs, self.actor(local_obs)).mean()
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor_optimizer.step()
+            actor_loss_value = float(actor_loss.item())
+            actor_updated = 1.0
 
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
+            for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
+                target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
-        for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
-            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
+            for target_param, param in zip(self.critic1_target.parameters(), self.critic1.parameters()):
+                target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
-        for target_param, param in zip(self.critic1_target.parameters(), self.critic1.parameters()):
-            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
+            for target_param, param in zip(self.critic2_target.parameters(), self.critic2.parameters()):
+                target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
-        for target_param, param in zip(self.critic2_target.parameters(), self.critic2.parameters()):
-            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
+        with torch.no_grad():
+            current_q_min = torch.min(current_q1, current_q2)
+            q_current_mean = float(current_q_min.mean().item())
+            q_target_mean = float(y.mean().item())
+            q_overestimation_gap = q_current_mean - q_target_mean
+            q_abs_td_error = float(torch.abs(current_q_min - y).mean().item())
+            q1_current_mean = float(current_q1.mean().item())
+            q2_current_mean = float(current_q2.mean().item())
+            q_disagreement_mean = float(torch.abs(current_q1 - current_q2).mean().item())
+
+        return {
+            "q_current_mean": q_current_mean,
+            "q_target_mean": q_target_mean,
+            "q_overestimation_gap": q_overestimation_gap,
+            "q_abs_td_error": q_abs_td_error,
+            "q1_current_mean": q1_current_mean,
+            "q2_current_mean": q2_current_mean,
+            "q_disagreement_mean": q_disagreement_mean,
+            "critic_loss1": float(critic_loss1.item()),
+            "critic_loss2": float(critic_loss2.item()),
+            "actor_loss": actor_loss_value,
+            "actor_updated": actor_updated,
+        }
 
     def save_models(self, path, episode):
         os.makedirs(path, exist_ok=True)

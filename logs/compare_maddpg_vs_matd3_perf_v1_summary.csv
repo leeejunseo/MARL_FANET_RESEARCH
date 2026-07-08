@@ -1,5 +1,0 @@
-scenario,MADDPG_avg_pdr,MATD3_avg_pdr,delta_avg_pdr,MADDPG_avg_delay_ms,MATD3_avg_delay_ms,delta_avg_delay_ms,MADDPG_avg_detection_f1,MATD3_avg_detection_f1,delta_avg_detection_f1
-Blackhole,,0.109358,,,241.021583,,,0.193717,
-Default,,0.101050,,,239.712667,,,0.183725,
-Selective Forwarding,,0.112850,,,236.526767,,,0.188267,
-Sybil,,0.100150,,,241.179142,,,0.185425,

@@ -1,5 +1,0 @@
-variant,episodes,eval_episodes,mean_delta_detection_f1,delta_auc,summary_csv,auc_txt,candidate_dir
-matd3_f1_v1,180,12,,,logs\compare_maddpg_vs_matd3_f1_v1_summary.csv,logs\compare_maddpg_vs_matd3_f1_v1_summary_auc.txt,logs\experiments\matd3_candidate_matd3_f1_v1
-matd3_f1_v2,180,12,,,logs\compare_maddpg_vs_matd3_f1_v2_summary.csv,logs\compare_maddpg_vs_matd3_f1_v2_summary_auc.txt,logs\experiments\matd3_candidate_matd3_f1_v2
-matd3_perf_v1,180,12,,,logs\compare_maddpg_vs_matd3_perf_v1_summary.csv,logs\compare_maddpg_vs_matd3_perf_v1_summary_auc.txt,logs\experiments\matd3_candidate_matd3_perf_v1
-matd3_perf_v2,180,12,,,logs\compare_maddpg_vs_matd3_perf_v2_summary.csv,logs\compare_maddpg_vs_matd3_perf_v2_summary_auc.txt,logs\experiments\matd3_candidate_matd3_perf_v2

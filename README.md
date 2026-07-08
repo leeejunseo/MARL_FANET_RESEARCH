@@ -2,6 +2,27 @@
 
 MADDPG/MATD3 기반 FANET 드론 스웜 연구 코드입니다.
 
+## 3분 요약
+
+이 프로젝트는 "드론 스웜이 통신 품질을 유지하면서 공격을 견디고, 충돌/에너지 낭비를 줄이도록" 강화학습으로 정책을 학습하는 코드입니다.
+
+- 환경: 다중 드론(FANET), 일부 드론은 악성 노드로 동작 가능
+- 알고리즘: `MADDPG`, `MATD3`
+- 핵심 비교 포인트:
+  - 통신 성능(PDR, 지연, 단절률)
+  - 탐지 성능(F1, Accuracy 등)
+  - 가치함수 안정성(Q 과대평가 gap, TD error)
+- 최신 결론: 본 설정에서 MATD3가 MADDPG 대비 더 안정적인 Q 추정과 더 나은 통신 성능 지표를 보였습니다.
+
+## 처음 읽는 사람 추천 순서
+
+1. 이 README의 `프로젝트를 처음 보는 분을 위한 핵심 개념`
+2. `시나리오와 공격 모델 설명`
+3. `드론은 언제 통신하고, 언제 끊기는가`
+4. `보상은 무엇을 높일 때 올라가는가`
+5. `그림 한 장으로 이해하기`
+6. 마지막으로 `최종 로컬 비교 (최신 MATD3)`
+
 ## 변경 사항 (2026-07-06)
 
 - 외부 링크 트레이스 브리지 관련 구성 및 스크립트 제거
@@ -43,6 +64,202 @@ marl_fanet_research/
   - `malicious_avoid_coeff`
   - `suspicious_avoid_coeff`
   - `avoid_distance_factor`
+
+## 프로젝트를 처음 보는 분을 위한 핵심 개념
+
+이 프로젝트는 드론 스웜이 아래 목표를 동시에 만족하도록 학습하는 문제입니다.
+
+- 통신 품질 유지(PDR↑, 지연↓, 단절↓)
+- 보안 위협 대응(악성 노드 탐지/회피)
+- 기동 안전성(충돌 회피, 벽면 붙기 방지)
+- 공간 활용(적절한 분산/커버리지)
+
+즉, 보상은 단일 목표(예: 통신만)로 구성되지 않고, 여러 목적의 균형을 맞추도록 설계되어 있습니다.
+
+## 시나리오와 공격 모델 설명
+
+평가 시나리오는 `Default`, `Blackhole`, `Selective Forwarding`, `Sybil`을 사용합니다.
+
+### 1) Default (drop_and_trust)
+
+- 기본 악성 동작 모델입니다.
+- 악성 링크는 전송 성공률이 낮아지고(드롭 증가), 지연이 추가됩니다.
+
+### 2) Blackhole
+
+- 블랙홀 노드는 패킷을 거의 모두 버리는 공격입니다.
+- 코드에서는 악성 경로일 때 전달률을 사실상 `0`으로 만들고, 링크 지연을 크게 증가시킵니다.
+
+### 3) Selective Forwarding
+
+- 확률적으로 일부 패킷만 버리는 공격입니다.
+- 악성 드롭 확률에 따라 전달/드롭이 랜덤하게 결정됩니다.
+
+### 4) Sybil
+
+- 식별/신뢰를 교란하는 유형의 공격으로 모델링되어 있습니다.
+- 코드에서는 전달률 저하 + 추가 지연으로 반영됩니다.
+
+### 공격별로 실제로 보이는 현상(직관 표)
+
+| 시나리오 | 전달률(PDR) | 지연(Delay) | 신뢰(Trust) | 관측되는 현상 |
+|---|---|---|---|---|
+| Default | 소폭 하락 | 소폭 증가 | 점진 하락 | 악성 링크가 간헐적으로 품질 저하 유발 |
+| Blackhole | 크게 하락 | 크게 증가 | 빠르게 하락 | 특정 노드 경유 트래픽이 거의 사라짐 |
+| Selective Forwarding | 중간 하락(변동 큼) | 중간 증가(변동 큼) | 변동성 증가 | 에피소드/스텝별 편차가 큼 |
+| Sybil | 중간 하락 | 중간 이상 증가 | 왜곡/불안정 | 정상 링크처럼 보여도 품질이 불안정 |
+
+## 공격이 실제로 어떻게 적용되는가
+
+- 에피소드 시작 시 `malicious_ratio`에 따라 악성 드론 ID를 샘플링합니다.
+- 링크 단위 계산에서 송신/수신 노드 중 하나라도 악성이면 악성 효과가 반영됩니다.
+- 물리 계층 간섭(`interference`)도 함께 적용되어 최종 전달률이 추가로 감소합니다.
+
+전달 성공률은 개념적으로 아래 형태입니다.
+
+- 기본 전달률(공격 영향 반영)
+- × 물리 성공 확률 `exp(-k * interference)`
+
+## 드론은 언제 통신하고, 언제 끊기는가
+
+### 통신이 성립되는 경우
+
+- 기본적으로 두 드론 간 거리 `distance <= R_c`이면 연결 후보가 됩니다.
+- 이 링크가 신뢰 기준(`trust_threshold`)을 크게 위반하지 않으면 연결 유지됩니다.
+
+### 통신이 끊기는 경우
+
+- 거리 초과: `distance > R_c`
+- 낮은 신뢰: 신뢰가 임계값보다 낮고(특히 심한 저신뢰), 보안 규칙에 의해 링크 차단
+- 공격/간섭 영향: 연결은 있어도 전달률이 매우 낮아져 실질적 단절 상태로 수렴
+
+추가로, 환경에는 연결 유지 보조 장치도 있습니다.
+
+- `connectivity_guard_coeff`: 이웃 수가 너무 적어질 때 다시 아군 쪽으로 당겨 링크 복구 유도
+- 보안 회피(`malicious_avoid_coeff`, `suspicious_avoid_coeff`)와 연결성 유지 사이 균형 조절
+
+### 한 줄 정리
+
+- 가까우면 연결 후보가 되고, 신뢰가 너무 낮아지면 끊기며, 공격/간섭이 세면 연결돼 있어도 실효 전달률이 떨어집니다.
+
+## 보상은 무엇을 높일 때 올라가는가
+
+결론부터 말하면, 둘 다입니다.
+
+- 통신이 잘 되면 보상이 올라가고
+- 너무 몰리지 않게 공간을 활용해도 보상이 올라갑니다.
+
+대신, 아래 항목들은 감점됩니다.
+
+- 충돌 위험(`d_safe` 이내 근접)
+- 링크 단절/지연 증가
+- 에너지 과소비
+- 보안 위험(악성 이웃, 저신뢰 링크, 경보 누적)
+- 벽면 근처에서의 비효율 기동(경계 패널티)
+
+### 보상 구성(직관 요약)
+
+- 통신 품질 보상: 전달률(PDR)↑, 지연(delay)↓
+- 신뢰 보상: 신뢰 점수(trust)↑
+- 커버리지 보상: 드론 간 적절한 분산(너무 붙지 않기)
+- 안전/운용 패널티: 충돌, 단절, 보안위험, 에너지, 경계 근접 패널티
+
+따라서 이 환경에서의 "좋은 정책"은 단순히 멀리 퍼지는 정책이 아니라,
+"연결을 유지하면서 악성 노드를 피하고, 지연/드롭/에너지를 함께 관리하는 정책"입니다.
+
+### 보상 항목 가중치 표 (현재 설정 기준)
+
+아래 값은 현재 `config.yaml` 기준 기본 가중치입니다. 값이 클수록 해당 항목의 영향력이 커집니다.
+
+| 항목 | 설정 키 | 기본값 | 영향 방향 | 의미 |
+|---|---|---:|---|---|
+| 커버리지 | `reward_cov_coeff` | 0.08 | + | 드론 간 적절한 거리/분산 유지 |
+| 충돌 패널티 | `reward_col_coeff` | 2.5 | - | `d_safe` 이내 근접 시 강한 감점 |
+| 연결성 패널티 | `reward_conn_coeff` | 5.5 | - | 통신 반경(`R_c`) 밖 링크 증가 시 감점 |
+| 신뢰 보상(양) | `reward_trust_pos_coeff` | 1.8 | + | 신뢰 높은 네트워크 상태 보상 |
+| 신뢰 패널티(음) | `reward_trust_neg_coeff` | 1.2 | - | 저신뢰 상태에 대한 감점 |
+| PDR 계수 | `reward_w_pdr` | 1.6 | + | 전달률(PDR) 향상 보상 |
+| 지연 계수 | `reward_w_delay` | 1.2 | - | 평균 지연 증가 패널티 |
+| 에너지 계수 | `reward_w_energy` | 0.8 | - | 에너지 소비 증가 패널티 |
+| 보안 위험 계수 | `reward_w_security` | 1.6 | - | 악성/저신뢰/경보 누적 위험 패널티 |
+| 중심 드리프트 패널티 | `center_reward_coeff` | 0.05 | - | 스웜 중심이 과도하게 치우치면 감점 |
+
+추가로, 아래 항목들은 보상 계산에 간접적으로 강한 영향을 줍니다.
+
+| 항목 | 설정 키 | 기본값 | 역할 |
+|---|---|---:|---|
+| 통신 반경 | `R_c` | 300.0 | 링크 성립 거리 기준 |
+| 안전 거리 | `d_safe` | 30.0 | 충돌 패널티 발동 거리 |
+| 신뢰 임계값 | `trust_threshold` | 0.35 | 저신뢰 링크 완화/차단 기준 |
+| 연결성 가드 | `connectivity_guard_coeff` | 0.45 | 이웃 부족 시 재연결 유도 강도 |
+| 악성 회피 | `malicious_avoid_coeff` | 0.65 | 악성 이웃 회피 강도 |
+
+실무적으로는 `reward_w_pdr`, `reward_w_delay`, `reward_w_security`, `reward_conn_coeff`를 먼저 조정하면 정책 성격(공격적 분산 vs 안정적 연결 유지)이 가장 크게 달라집니다.
+
+## 한 에피소드에서 일어나는 순서
+
+1. 환경 초기화 후 악성 노드 샘플링
+2. 각 드론이 행동(가속도 성격의 3축 액션) 선택
+3. 위치/속도 갱신 + 경계/연결성/보안 회피 보정
+4. 링크별 전달률/지연/신뢰/에너지 계산
+5. 보상 계산 및 관측 업데이트
+6. 다음 스텝 반복
+
+참고: 현재 구현은 `terminated=False`로 고정되어 있어, 에피소드는 보통 `max_steps`까지 진행됩니다.
+
+## 그림 한 장으로 이해하기
+
+```mermaid
+flowchart TD
+  A[에피소드 시작\n초기 위치 샘플링 + 악성 노드 지정] --> B[에이전트 행동 선택\n3축 액션]
+  B --> C[이동/속도 갱신\n경계 보호 + 연결성 가드 + 보안 회피]
+  C --> D[링크 품질 계산\n거리 기반 연결 + 공격/간섭 반영]
+  D --> E[신뢰 갱신\n저신뢰 링크 완화/차단]
+  E --> F[보상 계산]
+  F --> F1[PDR/신뢰/분산(커버리지) 보상]
+  F --> F2[지연/충돌/단절/에너지/보안위험 패널티]
+  F1 --> G[관측 업데이트\nobs(12차원) 생성]
+  F2 --> G
+  G --> H{종료 조건}
+  H -->|False| B
+  H -->|True 또는 max_steps 도달| I[에피소드 종료]
+
+  J[공격 시나리오\nDefault/Blackhole/Selective Forwarding/Sybil] --> D
+```
+
+## 관측 벡터(드론 1대 기준)
+
+드론 하나의 관측은 총 12차원입니다.
+
+- 위치 3차원
+- 속도 3차원
+- 신뢰 점수
+- SNR
+- 홉 수
+- 잔여 에너지
+- 경보 이력(alert history)
+- 통신 지연 정규화 값
+
+## 자주 묻는 질문 (FAQ)
+
+### Q1. 보상이 오르면 "통신이 좋아진 것"인가요, "정찰 커버리지가 좋아진 것"인가요?
+
+둘 다입니다. 이 환경은 다목적 보상이라 통신(PDR/지연), 보안(신뢰/위험), 기동(충돌/경계), 커버리지(분산)를 동시에 반영합니다.
+
+### Q2. 드론이 서로 멀어지면 무조건 나쁜가요?
+
+무조건 나쁘지는 않습니다. 일정 수준 분산은 커버리지에 유리하지만, `R_c`를 넘겨 링크가 끊기면 연결성 패널티가 커집니다.
+
+### Q3. 악성 노드를 강하게 피하면 항상 좋은가요?
+
+항상 그렇지는 않습니다. 너무 강하게 피하면 이웃 수가 부족해져 네트워크가 분절될 수 있어, 코드에서 `connectivity_guard`로 균형을 잡습니다.
+
+### Q4. Q값 비교에서 무엇을 보면 되나요?
+
+- `q_overestimation_gap`(작을수록 좋음): 과대평가 편향 크기
+- `q_abs_td_error`(작을수록 좋음): Bellman 일관성
+
+이 두 지표가 낮으면 일반적으로 가치추정이 안정적이라고 볼 수 있습니다.
 
 ## 빠른 시작
 
@@ -133,7 +350,7 @@ python visualize_attack.py --policy trained --algorithm matd3 --scenario Blackho
 ## 출력 파일
 
 - `logs/training_rewards.csv`, `logs/training_rewards_matd3.csv`
-- `logs/training_q_values.csv`, `logs/training_q_values_matd3.csv`
+- `logs/training_rewards_q_values.csv`, `logs/training_rewards_q_values_matd3.csv`
 - `logs/eval_metrics.csv`, `logs/eval_metrics_matd3.csv`
 - `logs/test_metrics.csv`, `logs/test_metrics_matd3.csv`
 - `logs/compare_maddpg_vs_matd3_summary.csv`
@@ -167,6 +384,8 @@ python utils/compare_q_values.py \
 - `logs/compare_maddpg_vs_matd3_q_summary.csv`
 - `logs/compare_maddpg_vs_matd3_q_summary.txt`
 - `logs/compare_maddpg_vs_matd3_q_gap_curve.png`
+
+참고: 현재 기본 로그 파일명은 `training_q_values*.csv`가 아니라 `training_rewards_q_values*.csv`로 생성됩니다.
 
 ## 요구 사항
 
@@ -241,7 +460,7 @@ python utils/compare_q_values.py \
 재현 명령어 (최신 MATD3 Blackhole GIF):
 
 ```bash
-python visualize_attack.py --config logs/sweeps/matd3_f1_sweep_20260706_165738/matd3_perf_v2.yaml --policy trained --algorithm matd3 --scenario Blackhole --episode 180 --fps 4 --output logs/attack_blackhole_matd3_best_fair_cfgmatch_v2.gif --event-log logs/attack_blackhole_matd3_best_fair_cfgmatch_v2_events.csv --no-show
+python visualize_attack.py --config config.yaml --policy trained --algorithm matd3 --scenario Blackhole --episode 180 --fps 4 --output logs/attack_blackhole_matd3_best_fair_cfgmatch_v2.gif --event-log logs/attack_blackhole_matd3_best_fair_cfgmatch_v2_events.csv --no-show
 ```
 
 ## 보고서 서술: 왜 이 프로젝트에서 MATD3가 MADDPG보다 더 적합한가

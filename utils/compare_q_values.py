@@ -4,6 +4,7 @@ import argparse
 import csv
 import glob
 import os
+from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -67,6 +68,21 @@ def load_q_rows(csv_path):
     return rows
 
 
+def dedupe_and_sort_rows(rows):
+    """Keep the last record per episode and return rows sorted by episode."""
+    if not rows:
+        return []
+
+    by_episode = OrderedDict()
+    for row in rows:
+        ep = row.get("episode")
+        if ep is None:
+            continue
+        by_episode[ep] = row
+
+    return [by_episode[k] for k in sorted(by_episode.keys())]
+
+
 def _to_float(v):
     if v is None:
         return None
@@ -107,11 +123,16 @@ def summarize(rows):
     _, td = series(rows, "q_abs_td_error")
     _, dis = series(rows, "q_disagreement_mean")
     _, upd = series(rows, "actor_update_ratio")
+    abs_gap = np.abs(gap) if gap is not None else None
 
     return {
         "episodes": len(rows),
         "mean_q_overestimation_gap": safe_mean(gap),
         "tail50_q_overestimation_gap": tail_mean(gap, tail=50),
+        "mean_abs_q_overestimation_gap": safe_mean(abs_gap),
+        "median_abs_q_overestimation_gap": None if abs_gap is None or len(abs_gap) == 0 else float(np.median(abs_gap)),
+        "p90_abs_q_overestimation_gap": None if abs_gap is None or len(abs_gap) == 0 else float(np.percentile(abs_gap, 90)),
+        "positive_gap_ratio": None if gap is None or len(gap) == 0 else float(np.mean(gap > 0.0)),
         "mean_q_abs_td_error": safe_mean(td),
         "tail50_q_abs_td_error": tail_mean(td, tail=50),
         "mean_q_disagreement": safe_mean(dis),
@@ -136,6 +157,10 @@ def write_summary_csv(path, base_label, cand_label, base_summary, cand_summary):
     metrics = [
         "mean_q_overestimation_gap",
         "tail50_q_overestimation_gap",
+        "mean_abs_q_overestimation_gap",
+        "median_abs_q_overestimation_gap",
+        "p90_abs_q_overestimation_gap",
+        "positive_gap_ratio",
         "mean_q_abs_td_error",
         "tail50_q_abs_td_error",
         "mean_q_disagreement",
@@ -163,6 +188,10 @@ def write_summary_csv(path, base_label, cand_label, base_summary, cand_summary):
 def write_summary_text(path, base_label, cand_label, base_summary, cand_summary):
     b_gap = base_summary.get("tail50_q_overestimation_gap")
     c_gap = cand_summary.get("tail50_q_overestimation_gap")
+    b_abs = base_summary.get("mean_abs_q_overestimation_gap")
+    c_abs = cand_summary.get("mean_abs_q_overestimation_gap")
+    b_p90 = base_summary.get("p90_abs_q_overestimation_gap")
+    c_p90 = cand_summary.get("p90_abs_q_overestimation_gap")
     b_td = base_summary.get("tail50_q_abs_td_error")
     c_td = cand_summary.get("tail50_q_abs_td_error")
 
@@ -180,6 +209,18 @@ def write_summary_text(path, base_label, cand_label, base_summary, cand_summary)
             "interpretation: lower q_overestimation_gap is better (closer to conservative value estimation)."
         )
     lines.append("")
+    lines.append(f"{base_label} mean |q_overestimation_gap|: {fmt(b_abs)}")
+    lines.append(f"{cand_label} mean |q_overestimation_gap|: {fmt(c_abs)}")
+    if b_abs is not None and c_abs is not None:
+        lines.append(f"delta (candidate - baseline): {fmt(c_abs - b_abs)}")
+        lines.append("interpretation: lower |q_overestimation_gap| means more stable and less biased value estimates.")
+    lines.append("")
+    lines.append(f"{base_label} p90 |q_overestimation_gap|: {fmt(b_p90)}")
+    lines.append(f"{cand_label} p90 |q_overestimation_gap|: {fmt(c_p90)}")
+    if b_p90 is not None and c_p90 is not None:
+        lines.append(f"delta (candidate - baseline): {fmt(c_p90 - b_p90)}")
+        lines.append("interpretation: lower p90 indicates fewer severe overestimation spikes.")
+    lines.append("")
     lines.append(f"{base_label} tail50 q_abs_td_error: {fmt(b_td)}")
     lines.append(f"{cand_label} tail50 q_abs_td_error: {fmt(c_td)}")
     if b_td is not None and c_td is not None:
@@ -188,6 +229,41 @@ def write_summary_text(path, base_label, cand_label, base_summary, cand_summary)
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+
+
+def plot_abs_gap_boxplot(base_rows, cand_rows, base_label, cand_label, out_path):
+    _, b_gap = series(base_rows, "q_overestimation_gap")
+    _, c_gap = series(cand_rows, "q_overestimation_gap")
+    if b_gap is None and c_gap is None:
+        return False
+
+    data = []
+    labels = []
+    if b_gap is not None and len(b_gap) > 0:
+        data.append(np.abs(b_gap))
+        labels.append(base_label)
+    if c_gap is not None and len(c_gap) > 0:
+        data.append(np.abs(c_gap))
+        labels.append(cand_label)
+
+    if not data:
+        return False
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.figure(figsize=(8, 5.2))
+    bp = plt.boxplot(data, tick_labels=labels, showfliers=True, patch_artist=True)
+    palette = ["#8fbad9", "#9fd3a8"]
+    for idx, patch in enumerate(bp["boxes"]):
+        patch.set_facecolor(palette[idx % len(palette)])
+        patch.set_alpha(0.8)
+
+    plt.title("Absolute Q Overestimation Gap Distribution")
+    plt.ylabel("|Q gap|")
+    plt.grid(True, axis="y", linestyle="--", alpha=0.35)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    return True
 
 
 def plot_gap_curve(base_rows, cand_rows, base_label, cand_label, out_path):
@@ -248,6 +324,11 @@ def main():
         print("Q 로그를 찾지 못했습니다. train.py를 최신 버전으로 재학습하여 training_q_values*.csv를 생성하세요.")
         return
 
+    base_raw_count = len(base_rows)
+    cand_raw_count = len(cand_rows)
+    base_rows = dedupe_and_sort_rows(base_rows)
+    cand_rows = dedupe_and_sort_rows(cand_rows)
+
     base_summary = summarize(base_rows)
     cand_summary = summarize(cand_rows)
 
@@ -255,17 +336,22 @@ def main():
     summary_csv = os.path.join(args.output_dir, f"{args.prefix}_summary.csv")
     summary_txt = os.path.join(args.output_dir, f"{args.prefix}_summary.txt")
     gap_plot = os.path.join(args.output_dir, f"{args.prefix}_gap_curve.png")
+    abs_gap_boxplot = os.path.join(args.output_dir, f"{args.prefix}_abs_gap_boxplot.png")
 
     write_summary_csv(summary_csv, args.baseline_label, args.candidate_label, base_summary, cand_summary)
     write_summary_text(summary_txt, args.baseline_label, args.candidate_label, base_summary, cand_summary)
     plotted = plot_gap_curve(base_rows, cand_rows, args.baseline_label, args.candidate_label, gap_plot)
+    plotted_box = plot_abs_gap_boxplot(base_rows, cand_rows, args.baseline_label, args.candidate_label, abs_gap_boxplot)
 
     print("Q 비교 완료")
     print(f"- baseline q csv: {base_q_csv}")
     print(f"- candidate q csv: {cand_q_csv}")
+    print(f"- baseline rows(raw->dedup): {base_raw_count} -> {len(base_rows)}")
+    print(f"- candidate rows(raw->dedup): {cand_raw_count} -> {len(cand_rows)}")
     print(f"- summary csv: {summary_csv}")
     print(f"- summary txt: {summary_txt}")
     print(f"- gap plot: {gap_plot if plotted else '생성 안됨(데이터 부족)'}")
+    print(f"- abs gap boxplot: {abs_gap_boxplot if plotted_box else '생성 안됨(데이터 부족)'}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+metric,MADDPG,MATD3,delta_candidate_minus_baseline
+mean_q_overestimation_gap,4.440263,0.807387,-3.632876
+tail50_q_overestimation_gap,4.440263,0.807387,-3.632876
+mean_abs_q_overestimation_gap,4.461125,1.650660,-2.810465
+median_abs_q_overestimation_gap,4.268681,1.587038,-2.681643
+p90_abs_q_overestimation_gap,7.619625,3.380047,-4.239578
+positive_gap_ratio,0.950000,0.700000,-0.250000
+mean_q_abs_td_error,12.975379,10.548254,-2.427126
+tail50_q_abs_td_error,12.975379,10.548254,-2.427126
+mean_q_disagreement,,9.806851,
+tail50_q_disagreement,,9.806851,
+mean_actor_update_ratio,,,

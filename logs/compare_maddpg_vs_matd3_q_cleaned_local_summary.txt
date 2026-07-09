@@ -1,0 +1,24 @@
+Q-value comparison summary
+
+Baseline=MADDPG
+Candidate=MATD3
+
+MADDPG tail50 q_overestimation_gap: 4.440263
+MATD3 tail50 q_overestimation_gap: 0.807387
+delta (candidate - baseline): -3.632876
+interpretation: lower q_overestimation_gap is better (closer to conservative value estimation).
+
+MADDPG mean |q_overestimation_gap|: 4.461125
+MATD3 mean |q_overestimation_gap|: 1.650660
+delta (candidate - baseline): -2.810465
+interpretation: lower |q_overestimation_gap| means more stable and less biased value estimates.
+
+MADDPG p90 |q_overestimation_gap|: 7.619625
+MATD3 p90 |q_overestimation_gap|: 3.380047
+delta (candidate - baseline): -4.239578
+interpretation: lower p90 indicates fewer severe overestimation spikes.
+
+MADDPG tail50 q_abs_td_error: 12.975379
+MATD3 tail50 q_abs_td_error: 10.548254
+delta (candidate - baseline): -2.427126
+interpretation: lower q_abs_td_error is better (better Bellman consistency).
